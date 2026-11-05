@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// 地図上の訪問地点・思い出・レビューを表すモデル
 ///
@@ -11,6 +12,8 @@ class MemoryPin {
     required this.placeName,
     required this.address,
     required this.prefecture,
+    required this.latitude,
+    required this.longitude,
     required this.mapNormalizedPosition,
     required this.startTime,
     required this.endTime,
@@ -27,8 +30,14 @@ class MemoryPin {
   final String address;
   final String prefecture;
 
-  /// モック地図キャンバス上の正規化座標 (0.0 ~ 1.0)
-  /// 実Google Maps導入時は LatLng(latitude, longitude) へ置き換える
+  /// Google Maps 上の実座標（緯度・経度）
+  final double latitude;
+  final double longitude;
+
+  /// Google Maps SDK 用の LatLng 座標を取得する
+  LatLng get latLng => LatLng(latitude, longitude);
+
+  /// 都道府県シルエット表示およびモック地図キャンバス上の正規化座標 (0.0 ~ 1.0)
   final Offset mapNormalizedPosition;
 
   final String startTime;
@@ -50,6 +59,8 @@ class MemoryPin {
       placeName: '清澄白河 ロースタリーカフェ',
       address: '東京都江東区清澄1-4-8',
       prefecture: '東京都',
+      latitude: 35.6821,
+      longitude: 139.7988,
       mapNormalizedPosition: Offset(0.66, 0.56),
       startTime: '10:30',
       endTime: '12:00',
@@ -63,6 +74,8 @@ class MemoryPin {
       placeName: '移動中継地点（海ほたるPA）',
       address: '千葉県木更津市中島地先海ほたる',
       prefecture: '千葉県',
+      latitude: 35.4646,
+      longitude: 139.8744,
       mapNormalizedPosition: Offset(0.69, 0.61),
       startTime: '13:00',
       endTime: '13:20',
@@ -77,6 +90,8 @@ class MemoryPin {
       placeName: '七里ヶ浜 海沿いテラス',
       address: '神奈川県鎌倉市七里ガ浜1-4-11',
       prefecture: '神奈川県',
+      latitude: 35.3056,
+      longitude: 139.5105,
       mapNormalizedPosition: Offset(0.62, 0.63),
       startTime: '14:30',
       endTime: '16:30',
@@ -90,6 +105,8 @@ class MemoryPin {
       placeName: '嵐山 竹林の小径',
       address: '京都府京都市右京区嵯峨小倉山田淵山町',
       prefecture: '京都府',
+      latitude: 35.0170,
+      longitude: 135.6713,
       mapNormalizedPosition: Offset(0.45, 0.62),
       startTime: '09:00',
       endTime: '11:00',
@@ -103,6 +120,8 @@ class MemoryPin {
       placeName: '札幌 大通公園・時計台',
       address: '北海道札幌市中央区北1条西2丁目',
       prefecture: '北海道',
+      latitude: 43.0626,
+      longitude: 141.3535,
       mapNormalizedPosition: Offset(0.80, 0.22),
       startTime: '18:00',
       endTime: '20:00',
@@ -116,6 +135,8 @@ class MemoryPin {
       placeName: '箱根湯本 温泉宿',
       address: '神奈川県足柄下郡箱根町湯本',
       prefecture: '神奈川県',
+      latitude: 35.2324,
+      longitude: 139.1069,
       mapNormalizedPosition: Offset(0.60, 0.64),
       startTime: '15:00',
       endTime: '10:00',
@@ -129,6 +150,8 @@ class MemoryPin {
       placeName: '代官山 ブックカフェ',
       address: '東京都渋谷区猿楽町17-5',
       prefecture: '東京都',
+      latitude: 35.6488,
+      longitude: 139.6994,
       mapNormalizedPosition: Offset(0.65, 0.57),
       startTime: '14:00',
       endTime: '16:00',

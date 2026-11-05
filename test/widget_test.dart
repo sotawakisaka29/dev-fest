@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:my_map_app/main.dart';
 
 void main() {
-  testWidgets('メイン画面の大枠表示と旅行開始→記録画面遷移テスト', (WidgetTester tester) async {
+  testWidgets('Google Maps表示・マーカー構成および旅行開始→記録画面遷移テスト', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MyMapApp());
+
+    // GoogleMap ウィジェットが描画され、初期マーカー・ルート線が設定されていることを確認
+    final googleMapFinder = find.byType(GoogleMap);
+    expect(googleMapFinder, findsOneWidget);
+    final initialMap = tester.widget<GoogleMap>(googleMapFinder);
+    expect(initialMap.markers.length, 5);
+    expect(initialMap.polylines.length, 1);
+    expect(initialMap.circles.length, 1);
 
     // メイン画面の上部メニュー要素が表示されていることを確認
     expect(find.text('日常'), findsOneWidget);
@@ -34,5 +45,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('日常'), findsOneWidget);
     expect(find.text('新しい思い出スポット'), findsOneWidget);
+
+    // 新規追加されたピンが GoogleMap のマーカーに反映されていることを確認
+    final updatedMap = tester.widget<GoogleMap>(find.byType(GoogleMap));
+    expect(updatedMap.markers.length, 6);
   });
 }

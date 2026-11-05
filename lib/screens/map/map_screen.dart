@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/models/memory_pin.dart';
 import '../../core/models/team_group.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/group_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/login/login_screen.dart';
 import '../record/record_screen.dart';
@@ -19,7 +21,10 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  final List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
+  final AuthService _authService = AuthService.instance;
+  final GroupService _groupService = GroupService.instance;
+
+  List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
   late TeamGroup _selectedTeam = _teams.first;
 
   final List<MemoryPin> _allPins = List<MemoryPin>.from(
@@ -30,21 +35,59 @@ class _MapScreenState extends State<MapScreen> {
   bool _isTripActive = false;
   bool _isMapInteracting = false;
   bool _isPrefectureMode = false;
-  String _currentUserName = 'DevFest User';
+  late AppUser _currentUser;
   Timer? _idleRestoreTimer;
+  StreamSubscription<List<TeamGroup>>? _groupsSubscription;
+  StreamSubscription<AppUser>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
+    _currentUser = _authService.currentUser;
     _selectedPin = _currentTeamPins.firstWhere(
       (p) => !p.isRouteWaypointOnly,
       orElse: () => _allPins.first,
     );
+
+    _listenAuthAndGroups();
+  }
+
+  void _listenAuthAndGroups() {
+    _authSubscription = _authService.authStateChanges.listen((user) {
+      if (mounted) {
+        setState(() => _currentUser = user);
+        _subscribeToGroups(user.uid);
+      }
+    });
+    _subscribeToGroups(_currentUser.uid);
+  }
+
+  void _subscribeToGroups(String uid) {
+    _groupsSubscription?.cancel();
+    // ログイン済みユーザーの場合のみ Firestore をリアルタイム監視
+    if (_currentUser.isAnonymous) {
+      return;
+    }
+    _groupsSubscription = _groupService.watchUserGroups(uid).listen((
+      newGroups,
+    ) {
+      if (!mounted || newGroups.isEmpty) return;
+      setState(() {
+        _teams = newGroups;
+        // 選択中チームが一覧にあれば維持、なければ先頭を選択
+        _selectedTeam = _teams.firstWhere(
+          (t) => t.id == _selectedTeam.id,
+          orElse: () => _teams.first,
+        );
+      });
+    });
   }
 
   @override
   void dispose() {
     _idleRestoreTimer?.cancel();
+    _groupsSubscription?.cancel();
+    _authSubscription?.cancel();
     super.dispose();
   }
 
@@ -85,13 +128,83 @@ class _MapScreenState extends State<MapScreen> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => LoginScreen(
-          currentUserName: _currentUserName,
-          onSignInCompleted: (newName) {
-            setState(() => _currentUserName = newName);
+          currentUserName: _currentUser.displayName,
+          onSignInCompleted: (user) {
+            setState(() => _currentUser = user);
           },
         ),
       ),
     );
+  }
+
+  Future<void> _handleCreateTeam(String teamName) async {
+    try {
+      final newTeam = await _groupService.createGroup(
+        name: teamName,
+        creatorUid: _currentUser.uid,
+      );
+      if (mounted) {
+        setState(() {
+          if (!_teams.any((t) => t.id == newTeam.id)) {
+            _teams.add(newTeam);
+          }
+          _selectedTeam = newTeam;
+          _selectedPin = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'グループ「${newTeam.name}」を作成しました（招待コード: ${newTeam.inviteCode}）',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('グループの作成に失敗しました: $e')));
+      }
+    }
+  }
+
+  Future<void> _handleJoinTeamByCode(String code) async {
+    try {
+      final joinedTeam = await _groupService.joinGroupByInviteCode(
+        inviteCode: code,
+        userUid: _currentUser.uid,
+      );
+      if (mounted) {
+        setState(() {
+          final index = _teams.indexWhere((t) => t.id == joinedTeam.id);
+          if (index != -1) {
+            _teams[index] = joinedTeam;
+          } else {
+            _teams.add(joinedTeam);
+          }
+          _selectedTeam = joinedTeam;
+          final nextPins = _currentTeamPins
+              .where((p) => !p.isRouteWaypointOnly)
+              .toList();
+          _selectedPin = nextPins.isNotEmpty ? nextPins.first : null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('グループ「${joinedTeam.name}」に参加しました！'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -143,18 +256,8 @@ class _MapScreenState extends State<MapScreen> {
                     _selectedPin = nextPins.isNotEmpty ? nextPins.first : null;
                   });
                 },
-                onCreateTeam: (teamName) {
-                  final newTeam = TeamGroup(
-                    id: 'team_${DateTime.now().millisecondsSinceEpoch}',
-                    name: teamName,
-                    memberCount: 1,
-                  );
-                  setState(() {
-                    _teams.add(newTeam);
-                    _selectedTeam = newTeam;
-                    _selectedPin = null;
-                  });
-                },
+                onCreateTeam: _handleCreateTeam,
+                onJoinTeamByCode: _handleJoinTeamByCode,
                 onToggleTrip: () {
                   setState(() => _isTripActive = !_isTripActive);
                 },

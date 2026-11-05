@@ -23,6 +23,8 @@ class _RecordScreenState extends State<RecordScreen> {
   bool _shareLocation = true;
   String _selectedAddress = '東京都江東区平野1-4-8';
   String _selectedPrefecture = '東京都';
+  double _selectedLatitude = 35.6777;
+  double _selectedLongitude = 139.8027;
   Offset _selectedNormalizedPosition = const Offset(0.67, 0.55);
 
   TimeOfDay _startTime = const TimeOfDay(hour: 12, minute: 0);
@@ -54,6 +56,8 @@ class _RecordScreenState extends State<RecordScreen> {
       placeName: placeName,
       address: _selectedAddress,
       prefecture: _selectedPrefecture,
+      latitude: _selectedLatitude,
+      longitude: _selectedLongitude,
       mapNormalizedPosition: _selectedNormalizedPosition,
       startTime: _formatTime(_startTime),
       endTime: _formatTime(_endTime),
@@ -117,6 +121,8 @@ class _RecordScreenState extends State<RecordScreen> {
                     _placeController.text = candidate.name;
                     _selectedAddress = candidate.address;
                     _selectedPrefecture = candidate.prefecture;
+                    _selectedLatitude = candidate.latitude;
+                    _selectedLongitude = candidate.longitude;
                     _selectedNormalizedPosition = candidate.normalizedPosition;
                   });
                 },
