@@ -7,12 +7,16 @@ class PlaceCandidate {
     required this.name,
     required this.address,
     required this.prefecture,
+    required this.latitude,
+    required this.longitude,
     required this.normalizedPosition,
   });
 
   final String name;
   final String address;
   final String prefecture;
+  final double latitude;
+  final double longitude;
   final Offset normalizedPosition;
 
   static const List<PlaceCandidate> sampleCandidates = [
@@ -20,30 +24,40 @@ class PlaceCandidate {
       name: 'ブルーボトルコーヒー 清澄白河フラッグシップカフェ',
       address: '東京都江東区平野1-4-8',
       prefecture: '東京都',
+      latitude: 35.6777,
+      longitude: 139.8027,
       normalizedPosition: Offset(0.67, 0.55),
     ),
     PlaceCandidate(
       name: '金沢21世紀美術館',
       address: '石川県金沢市広坂1-2-1',
       prefecture: '石川県',
+      latitude: 36.5609,
+      longitude: 136.6582,
       normalizedPosition: Offset(0.52, 0.54),
     ),
     PlaceCandidate(
       name: '道頓堀 グリコサイン前',
       address: '大阪府大阪市中央区道頓堀1-10-4',
       prefecture: '大阪府',
+      latitude: 34.6687,
+      longitude: 135.5013,
       normalizedPosition: Offset(0.43, 0.65),
     ),
     PlaceCandidate(
       name: '太宰府天満宮 参道茶屋',
       address: '福岡県太宰府市宰府4-7-1',
       prefecture: '福岡県',
+      latitude: 33.5215,
+      longitude: 130.5349,
       normalizedPosition: Offset(0.24, 0.74),
     ),
     PlaceCandidate(
       name: '仙台駅 牛たん通り',
       address: '宮城県仙台市青葉区中央1-1-1',
       prefecture: '宮城県',
+      latitude: 38.2601,
+      longitude: 140.8824,
       normalizedPosition: Offset(0.73, 0.41),
     ),
   ];
