@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "717242936544",
+    "project_id": "memory-map-a7406",
+    "storage_bucket": "memory-map-a7406.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:717242936544:android:f4e4a30994614a2531b485",
+        "android_client_info": {
+          "package_name": "com.devfest.mymap.my_map_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "717242936544-eqf3ocirqha03m5jd3i13moktiv52gq2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAHPeeKxy6aO19qtq_OMctQnsuq0b92xN4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "717242936544-eqf3ocirqha03m5jd3i13moktiv52gq2.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

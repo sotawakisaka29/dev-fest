@@ -19,6 +19,7 @@ class HeaderMenuOverlay extends StatelessWidget {
     required this.pinCount,
     required this.onTeamSelected,
     required this.onCreateTeam,
+    required this.onJoinTeamByCode,
     required this.onToggleTrip,
     required this.onOpenRecord,
     required this.onOpenAuth,
@@ -31,6 +32,7 @@ class HeaderMenuOverlay extends StatelessWidget {
   final int pinCount;
   final ValueChanged<TeamGroup> onTeamSelected;
   final ValueChanged<String> onCreateTeam;
+  final ValueChanged<String> onJoinTeamByCode;
   final VoidCallback onToggleTrip;
   final VoidCallback onOpenRecord;
   final VoidCallback onOpenAuth;
@@ -70,6 +72,7 @@ class HeaderMenuOverlay extends StatelessWidget {
                       selectedTeam: selectedTeam,
                       onTeamSelected: onTeamSelected,
                       onCreateTeam: onCreateTeam,
+                      onJoinTeamByCode: onJoinTeamByCode,
                     ),
                   ),
                   if (isTripActive)
