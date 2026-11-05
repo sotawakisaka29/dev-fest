@@ -1,0 +1,121 @@
+# ==============================================================================
+# 1. Secrets, API Keys & Credentials (NEVER COMMIT)
+# ==============================================================================
+# Environment variable files
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Google Cloud / Firebase service account & private keys
+*service-account*.json
+*service_account*.json
+*credentials*.json
+*.pem
+*.p12
+*.key
+*.keystore
+*.jks
+
+# Mobile platform local & signing secrets (Google Maps API keys, keystore paths, etc.)
+local.properties
+**/android/local.properties
+**/android/key.properties
+**/ios/Flutter/Secrets.xcconfig
+**/ios/Runner/Secrets.xcconfig
+**/ios/Runner/ApiKeys.plist
+Secrets.plist
+
+# ==============================================================================
+# 2. Flutter / Dart
+# ==============================================================================
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+coverage/
+**/doc/api/
+
+# Code generation cache (if build_runner is used later)
+.dart_tool/build/
+
+# ==============================================================================
+# 3. Android
+# ==============================================================================
+.gradle/
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/**/GeneratedPluginRegistrant.java
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ==============================================================================
+# 4. iOS / macOS
+# ==============================================================================
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+DerivedData/
+*.mode1v3
+*.mode2v3
+*.moved-aside
+*.pbxuser
+*.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ==============================================================================
+# 5. Firebase & Google Cloud CLI / Emulators
+# ==============================================================================
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+pubsub-debug.log*
+storage-debug.log*
+.runtimeconfig.json
+
+# ==============================================================================
+# 6. IDEs, Editors & OS
+# ==============================================================================
+# macOS / Windows / Linux
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Desktop.ini
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code (keep shared settings if needed in future, ignore local workspace state)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Runtime debug logs (Note: repository /log/*.md directory is tracked intentionally)
+*.log
+!log/
+!log/**/*.md
