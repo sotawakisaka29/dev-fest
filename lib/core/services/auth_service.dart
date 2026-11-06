@@ -33,7 +33,17 @@ class AuthService {
   AuthService._();
   static final AuthService instance = AuthService._();
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: [
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/photoslibrary',
+      'https://www.googleapis.com/auth/photoslibrary.readonly',
+    ],
+  );
+
+  /// ログイン中のGoogleSignInAccountを取得（Google Photos APIリクエスト等で使用）
+  GoogleSignInAccount? get currentGoogleUser => _googleSignIn.currentUser;
 
   bool get isFirebaseInitialized => Firebase.apps.isNotEmpty;
 
