@@ -143,9 +143,9 @@ class TeamSelectorDropdown extends StatelessWidget {
             final isCurrent =
                 index < teams.length && teams[index].id == selectedTeam.id;
             return Container(
-              width: 3,
-              height: isCurrent ? 10 : 4,
-              margin: const EdgeInsets.symmetric(vertical: 1.5),
+              width: 4,
+              height: isCurrent ? 14 : 6,
+              margin: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
                 color: isCurrent ? AppTheme.darkGrey : AppTheme.lightGrey,
                 borderRadius: BorderRadius.circular(2),
@@ -274,18 +274,26 @@ class TeamSelectorDropdown extends StatelessWidget {
                     selectedTeam.name,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 22,
+                      fontSize: 26,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.darkGrey,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.4,
+                      shadows: [
+                        Shadow(color: Colors.white, blurRadius: 8),
+                        Shadow(color: Colors.white, blurRadius: 14),
+                      ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 4),
                 const Icon(
                   Icons.keyboard_arrow_down_rounded,
-                  size: 26,
+                  size: 30,
                   color: AppTheme.darkGrey,
+                  shadows: [
+                    Shadow(color: Colors.white, blurRadius: 8),
+                    Shadow(color: Colors.white, blurRadius: 14),
+                  ],
                 ),
               ],
             ),
