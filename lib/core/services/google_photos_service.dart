@@ -145,7 +145,7 @@ class GooglePhotosService {
       _activeSession = session;
       _isCancelled = false;
       return session;
-    } on SocketException {
+    } on IOException {
       throw const GooglePhotosCustomException(
         GooglePhotosErrorType.networkError,
         'ネットワークに接続できません。通信環境を確認してください。',
@@ -195,7 +195,7 @@ class GooglePhotosService {
       final session = PickerSession.fromJson(data);
       _activeSession = session;
       return session;
-    } on SocketException {
+    } on IOException {
       throw const GooglePhotosCustomException(
         GooglePhotosErrorType.networkError,
         'セッション状態取得中にネットワークエラーが発生しました。',
@@ -212,18 +212,8 @@ class GooglePhotosService {
     int? customPollIntervalSeconds,
     int? customTimeoutSeconds,
   }) async {
-    final initialSession = await getSession(
-      sessionId: sessionId,
-      accessToken: accessToken,
-    );
-
-    if (initialSession.mediaItemsSet) {
-      return initialSession;
-    }
-
-    final intervalSec =
-        customPollIntervalSeconds ?? initialSession.pollIntervalSeconds;
-    final timeoutSec = customTimeoutSeconds ?? initialSession.timeoutSeconds;
+    int intervalSec = customPollIntervalSeconds ?? 5;
+    final timeoutSec = customTimeoutSeconds ?? 300;
     final deadline = DateTime.now().add(Duration(seconds: timeoutSec));
 
     while (DateTime.now().isBefore(deadline)) {
@@ -234,23 +224,27 @@ class GooglePhotosService {
         );
       }
 
-      await Future<void>.delayed(Duration(seconds: intervalSec));
-
-      if (_isCancelled) {
-        throw const GooglePhotosCustomException(
-          GooglePhotosErrorType.userCancelled,
-          '写真の選択がキャンセルされました。',
+      try {
+        final session = await getSession(
+          sessionId: sessionId,
+          accessToken: accessToken,
         );
+
+        intervalSec = customPollIntervalSeconds ?? session.pollIntervalSeconds;
+
+        if (session.mediaItemsSet) {
+          return session;
+        }
+      } on GooglePhotosCustomException catch (e) {
+        // Androidのバックグラウンド移行時の接続切断(Software caused connection abort)や電波瞬断はリトライ
+        if (e.type == GooglePhotosErrorType.networkError) {
+          debugPrint('一時的な通信切断を検知しました。ポーリングを再試行します: ${e.message}');
+        } else {
+          rethrow;
+        }
       }
 
-      final session = await getSession(
-        sessionId: sessionId,
-        accessToken: accessToken,
-      );
-
-      if (session.mediaItemsSet) {
-        return session;
-      }
+      await Future<void>.delayed(Duration(seconds: intervalSec));
     }
 
     throw const GooglePhotosCustomException(
@@ -310,7 +304,7 @@ class GooglePhotosService {
       } while (pageToken != null && pageToken.isNotEmpty);
 
       return photos;
-    } on SocketException {
+    } on IOException {
       throw const GooglePhotosCustomException(
         GooglePhotosErrorType.networkError,
         '写真一覧の取得中にネットワークエラーが発生しました。',
@@ -530,10 +524,16 @@ class GooglePhotosService {
         errorType: e.type,
         message: e.message,
       );
+    } on IOException {
+      return const GooglePhotosPickerResult.failure(
+        errorType: GooglePhotosErrorType.networkError,
+        message: 'ネットワーク通信エラーが発生しました。通信環境を確認し、再度お試しください。',
+      );
     } catch (e) {
-      return GooglePhotosPickerResult.failure(
+      debugPrint('GooglePhotosService unexpected error: $e');
+      return const GooglePhotosPickerResult.failure(
         errorType: GooglePhotosErrorType.unknown,
-        message: '予期せぬエラーが発生しました: $e',
+        message: '写真選択処理中にエラーが発生しました。再度お試しください。',
       );
     } finally {
       // 8. 使用済みセッションを削除クリーンアップ

@@ -132,4 +132,33 @@ void main() {
       expect(AuthService.parseScopesFromTokenInfo(invalidJson), isEmpty);
     });
   });
+
+  group('GooglePhotosCustomException and ErrorType test', () {
+    test('GooglePhotosErrorType contains networkError and sessionExpired', () {
+      expect(
+        GooglePhotosErrorType.values.contains(
+          GooglePhotosErrorType.networkError,
+        ),
+        isTrue,
+      );
+      expect(
+        GooglePhotosErrorType.values.contains(
+          GooglePhotosErrorType.pollingTimeout,
+        ),
+        isTrue,
+      );
+    });
+
+    test('GooglePhotosCustomException formats toString correctly', () {
+      const exception = GooglePhotosCustomException(
+        GooglePhotosErrorType.networkError,
+        '接続エラー',
+      );
+      expect(exception.toString(), contains('接続エラー'));
+      expect(
+        exception.toString(),
+        contains('GooglePhotosErrorType.networkError'),
+      );
+    });
+  });
 }
