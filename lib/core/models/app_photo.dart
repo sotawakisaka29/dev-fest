@@ -24,7 +24,7 @@ class AppPhoto {
   /// 撮影日時
   final DateTime? takenAt;
 
-  /// Googleフォトから自動取得されたかどうか
+  /// Googleフォトから選択されたかどうか
   final bool isFromGooglePhotos;
 
   AppPhoto copyWith({

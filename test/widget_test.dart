@@ -41,9 +41,11 @@ void main() {
     await tester.tap(find.text('スタート'));
     await tester.pumpAndSettle();
 
+
     // 旅行中は「記録する」と「旅行停止」が表示されること
     expect(find.text('記録する'), findsOneWidget);
     expect(find.text('旅行停止'), findsOneWidget);
+
 
     // 4. 「旅行停止」をタップすると、つけたタイトル「週末の箱根旅」で旅行まとめが作られること
     await tester.tap(find.text('旅行停止'));
