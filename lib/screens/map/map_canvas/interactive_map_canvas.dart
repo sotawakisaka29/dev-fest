@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +5,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../core/models/memory_pin.dart';
 import '../../../core/theme/app_theme.dart';
 import '../pin_callout/pin_callout_card.dart';
+import 'region_photo_overlay.dart';
 
-/// Google Maps 表示枠およびピン・ルート・吹き出しの描画キャンバス（MVP機能①）
-///
-/// `google_maps_flutter` を用いて実際の地図上に訪問地点の赤ピン（Marker）、
-/// 移動軌跡のルート線（Polyline）、レビューなし通過点の黒丸（Circle）を描画する。
-/// 地図のドラッグ/ピンチ操作中は上部メニューを自動非表示にするイベントを通知する。
+/// Google Maps 表示枠および3段階ズーム（県シルエット写真 → 市シルエット写真 → ピン＋有名スポット表示）キャンバス
 class InteractiveMapCanvas extends StatefulWidget {
   const InteractiveMapCanvas({
     super.key,
@@ -20,7 +16,11 @@ class InteractiveMapCanvas extends StatefulWidget {
     required this.showRouteLine,
     required this.onPinSelected,
     required this.onOpenPinDetail,
+    required this.onTapRegionPins,
     required this.onInteractionChanged,
+    required this.onZoom1xChanged,
+    this.externalFocusPin,
+    this.onExternalFocusHandled,
   });
 
   final List<MemoryPin> pins;
@@ -28,18 +28,89 @@ class InteractiveMapCanvas extends StatefulWidget {
   final bool showRouteLine;
   final ValueChanged<MemoryPin?> onPinSelected;
   final ValueChanged<MemoryPin> onOpenPinDetail;
+
+  /// 都道府県・市区町村の写真プレビューをタップした際に対応する思い出へ遷移するコールバック
+  final ValueChanged<List<MemoryPin>> onTapRegionPins;
+
   final ValueChanged<bool> onInteractionChanged;
+
+  /// 現在1倍表示（初期全体表示域）にあるかどうかを通知するコールバック
+  final ValueChanged<bool> onZoom1xChanged;
+
+  /// 思い出詳細画面の「↗ Google Mapへ飛ぶ」等から明示的にジャンプ要求されたピン
+  final MemoryPin? externalFocusPin;
+  final VoidCallback? onExternalFocusHandled;
 
   @override
   State<InteractiveMapCanvas> createState() => _InteractiveMapCanvasState();
 }
 
 class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
-  static const LatLng _defaultTokyoLatLng = LatLng(35.6812, 139.7671);
+  /// 1倍（国全体表示）の基準ズーム倍率
+  static const double _zoom1x = 5.2;
 
-  /// アイデアシートの「灰・白」トーンに合わせたグレースケール地図スタイル
-  static const String _greyWhiteMapStyleJson = '''
+  /// 1倍とみなす上限ズーム閾値（上部タブの表示条件）
+  static const double _zoom1xMaxThreshold = 6.2;
+
+  /// 県の形 → 市の形に切り替わるズーム閾値（県が画面いっぱいになる手前）
+  static const double _cityModeZoomThreshold = 7.8;
+
+  /// 市の形 → ピン＆有名スポット表示に切り替わるズーム閾値
+  static const double _detailPinZoomThreshold = 11.2;
+
+  /// 低・中倍率用：道路・POI・文字ラベルを消して県の輪郭と灰・白トーンだけにするスタイル
+  static const String _outlineOnlyMapStyleJson = '''
 [
+  {
+    "featureType": "all",
+    "stylers": [{"saturation": -100}]
+  },
+  {
+    "elementType": "labels",
+    "stylers": [{"visibility": "off"}]
+  },
+  {
+    "featureType": "road",
+    "stylers": [{"visibility": "off"}]
+  },
+  {
+    "featureType": "poi",
+    "stylers": [{"visibility": "off"}]
+  },
+  {
+    "featureType": "transit",
+    "stylers": [{"visibility": "off"}]
+  },
+  {
+    "featureType": "landscape",
+    "elementType": "geometry",
+    "stylers": [{"color": "#f5f5f5"}]
+  },
+  {
+    "featureType": "water",
+    "elementType": "geometry",
+    "stylers": [{"color": "#e3e6ea"}]
+  },
+  {
+    "featureType": "administrative.country",
+    "elementType": "geometry.stroke",
+    "stylers": [{"visibility": "on"}, {"color": "#616161"}, {"weight": 1.5}]
+  },
+  {
+    "featureType": "administrative.province",
+    "elementType": "geometry.stroke",
+    "stylers": [{"visibility": "on"}, {"color": "#757575"}, {"weight": 1.2}]
+  }
+]
+''';
+
+  /// 高倍率（第3段階）用：灰・白のトンマナを完全に維持したまま、道路と有名な観光スポット（poi.attraction）のみを表示するスタイル
+  static const String _detailedMapStyleJson = '''
+[
+  {
+    "featureType": "all",
+    "stylers": [{"saturation": -100}]
+  },
   {
     "elementType": "geometry",
     "stylers": [{"color": "#f5f5f5"}]
@@ -57,14 +128,27 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
     "stylers": [{"color": "#f5f5f5"}]
   },
   {
-    "featureType": "administrative.land_parcel",
-    "elementType": "labels.text.fill",
-    "stylers": [{"color": "#bdbdbd"}]
+    "featureType": "poi",
+    "stylers": [{"visibility": "off"}]
   },
   {
-    "featureType": "poi",
+    "featureType": "poi.attraction",
+    "elementType": "labels.text",
+    "stylers": [{"visibility": "on"}]
+  },
+  {
+    "featureType": "poi.park",
     "elementType": "geometry",
-    "stylers": [{"color": "#eeeeee"}]
+    "stylers": [{"visibility": "on"}, {"color": "#ebebeb"}]
+  },
+  {
+    "featureType": "poi.park",
+    "elementType": "labels.text",
+    "stylers": [{"visibility": "on"}]
+  },
+  {
+    "featureType": "transit",
+    "stylers": [{"visibility": "off"}]
   },
   {
     "featureType": "road",
@@ -73,13 +157,18 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
   },
   {
     "featureType": "road.arterial",
-    "elementType": "labels.text.fill",
-    "stylers": [{"color": "#757575"}]
+    "elementType": "geometry",
+    "stylers": [{"color": "#fafafa"}]
   },
   {
     "featureType": "road.highway",
     "elementType": "geometry",
-    "stylers": [{"color": "#dadada"}]
+    "stylers": [{"color": "#e0e0e0"}]
+  },
+  {
+    "featureType": "road",
+    "elementType": "labels",
+    "stylers": [{"visibility": "off"}]
   },
   {
     "featureType": "water",
@@ -87,33 +176,55 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
     "stylers": [{"color": "#e3e6ea"}]
   },
   {
-    "featureType": "water",
-    "elementType": "labels.text.fill",
-    "stylers": [{"color": "#9e9e9e"}]
+    "featureType": "administrative.province",
+    "elementType": "geometry.stroke",
+    "stylers": [{"visibility": "on"}, {"color": "#9e9e9e"}, {"weight": 1.1}]
   }
 ]
 ''';
 
   GoogleMapController? _mapController;
+  late CameraPosition _currentCameraPosition = _initialCountryCameraPosition;
 
-  /// APIキー未設定のローカル環境でもピン位置を確認できるフォールバックモード切替
-  bool _useMockFallback = false;
-
-  CameraPosition get _initialCameraPosition {
-    final target =
-        widget.selectedPin?.latLng ??
-        (widget.pins.isNotEmpty
-            ? widget.pins.first.latLng
-            : _defaultTokyoLatLng);
-    return CameraPosition(target: target, zoom: 10.5);
+  /// 端末の地域設定（または日本全体）に応じた初期1倍カメラ位置
+  static CameraPosition get _initialCountryCameraPosition {
+    final countryCode =
+        PlatformDispatcher.instance.locale.countryCode?.toUpperCase() ?? 'JP';
+    switch (countryCode) {
+      case 'US':
+        return const CameraPosition(
+          target: LatLng(39.8283, -98.5795),
+          zoom: 3.8,
+        );
+      case 'GB':
+        return const CameraPosition(target: LatLng(54.5, -2.5), zoom: 5.3);
+      case 'KR':
+        return const CameraPosition(target: LatLng(36.3, 127.8), zoom: 6.5);
+      case 'TW':
+        return const CameraPosition(target: LatLng(23.7, 121.0), zoom: 7.0);
+      case 'JP':
+      default:
+        return const CameraPosition(
+          target: LatLng(36.2048, 137.5500),
+          zoom: _zoom1x,
+        );
+    }
   }
+
+  bool get _isAt1x => _currentCameraPosition.zoom < _zoom1xMaxThreshold;
+  bool get _isDetailPinMode =>
+      _currentCameraPosition.zoom >= _detailPinZoomThreshold;
+  bool get _isCityPhotoMode =>
+      _currentCameraPosition.zoom >= _cityModeZoomThreshold &&
+      _currentCameraPosition.zoom < _detailPinZoomThreshold;
 
   @override
   void didUpdateWidget(covariant InteractiveMapCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final nextPin = widget.selectedPin;
-    if (nextPin != null && nextPin.id != oldWidget.selectedPin?.id) {
-      _animateToPin(nextPin);
+    final focusPin = widget.externalFocusPin;
+    if (focusPin != null && focusPin.id != oldWidget.externalFocusPin?.id) {
+      _jumpToPinDetailMode(focusPin);
+      widget.onExternalFocusHandled?.call();
     }
   }
 
@@ -123,54 +234,56 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
     super.dispose();
   }
 
-  Future<void> _animateToPin(MemoryPin pin) async {
+  void _updateCameraState(CameraPosition position) {
+    final was1x = _isAt1x;
+    final wasDetail = _isDetailPinMode;
+    setState(() {
+      _currentCameraPosition = position;
+    });
+    if (was1x != _isAt1x) {
+      widget.onZoom1xChanged(_isAt1x);
+    }
+    if (wasDetail && !_isDetailPinMode && widget.selectedPin != null) {
+      widget.onPinSelected(null);
+    }
+  }
+
+  /// ホームボタンを押したときに1倍（日本地図全体表示）へ戻す
+  Future<void> _returnToHome1x() async {
+    widget.onPinSelected(null);
+    final homePos = _initialCountryCameraPosition;
+    _updateCameraState(homePos);
+
     final controller = _mapController;
     if (controller == null) return;
     try {
       await controller.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: pin.latLng, zoom: 12.0),
-        ),
+        CameraUpdate.newCameraPosition(homePos),
       );
-    } catch (_) {
-      // ウィジェットテスト環境やコントローラ破棄後の呼び出し時は無視する
-    }
+    } catch (_) {}
   }
 
-  Future<void> _fitAllPins() async {
+  Future<void> _animateToZoomTarget(LatLng target, double zoom) async {
+    final nextPos = CameraPosition(target: target, zoom: zoom);
+    _updateCameraState(nextPos);
+
     final controller = _mapController;
-    if (controller == null || widget.pins.isEmpty) return;
+    if (controller == null) return;
     try {
-      if (widget.pins.length == 1) {
-        await controller.animateCamera(
-          CameraUpdate.newLatLngZoom(widget.pins.first.latLng, 12.0),
-        );
-        return;
-      }
+      await controller.animateCamera(CameraUpdate.newCameraPosition(nextPos));
+    } catch (_) {}
+  }
 
-      double minLat = widget.pins.first.latitude;
-      double maxLat = widget.pins.first.latitude;
-      double minLng = widget.pins.first.longitude;
-      double maxLng = widget.pins.first.longitude;
-
-      for (final pin in widget.pins.skip(1)) {
-        minLat = math.min(minLat, pin.latitude);
-        maxLat = math.max(maxLat, pin.latitude);
-        minLng = math.min(minLng, pin.longitude);
-        maxLng = math.max(maxLng, pin.longitude);
-      }
-
-      final bounds = LatLngBounds(
-        southwest: LatLng(minLat, minLng),
-        northeast: LatLng(maxLat, maxLng),
-      );
-      await controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 72));
-    } catch (_) {
-      // 同一座標のみの場合などの例外を安全に無視する
-    }
+  Future<void> _jumpToPinDetailMode(MemoryPin pin) async {
+    await _animateToZoomTarget(pin.latLng, 14.2);
+    widget.onPinSelected(pin);
   }
 
   Set<Marker> _buildMarkers() {
+    if (!_isDetailPinMode) {
+      return const <Marker>{};
+    }
+
     return widget.pins.map((pin) {
       if (pin.isRouteWaypointOnly) {
         return Marker(
@@ -190,16 +303,16 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
         markerId: MarkerId(pin.id),
         position: pin.latLng,
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        // ピンに触れてもカメラのクローズアップはせず、その場の位置でレビューを表示する
         onTap: () {
           widget.onPinSelected(pin);
-          _animateToPin(pin);
         },
       );
     }).toSet();
   }
 
   Set<Polyline> _buildPolylines() {
-    if (!widget.showRouteLine || widget.pins.length < 2) {
+    if (!_isDetailPinMode || !widget.showRouteLine || widget.pins.length < 2) {
       return const <Polyline>{};
     }
 
@@ -217,6 +330,10 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
   }
 
   Set<Circle> _buildWaypointCircles() {
+    if (!_isDetailPinMode) {
+      return const <Circle>{};
+    }
+
     return widget.pins.where((pin) => pin.isRouteWaypointOnly).map((pin) {
       return Circle(
         circleId: CircleId('waypoint_${pin.id}'),
@@ -235,136 +352,138 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
       onPointerDown: (_) => widget.onInteractionChanged(true),
       onPointerUp: (_) => widget.onInteractionChanged(false),
       onPointerCancel: (_) => widget.onInteractionChanged(false),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // 1. 地図本体（Google Maps または APIキー未設定時用の簡易キャンバス）
-          Positioned.fill(
-            child: _useMockFallback
-                ? _buildMockMapCanvas()
-                : GoogleMap(
-                    initialCameraPosition: _initialCameraPosition,
-                    style: _greyWhiteMapStyleJson,
-                    markers: _buildMarkers(),
-                    polylines: _buildPolylines(),
-                    circles: _buildWaypointCircles(),
-                    myLocationButtonEnabled: false,
-                    zoomControlsEnabled: false,
-                    mapToolbarEnabled: false,
-                    compassEnabled: true,
-                    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                      Factory<OneSequenceGestureRecognizer>(
-                        EagerGestureRecognizer.new,
-                      ),
-                    },
-                    onMapCreated: (controller) {
-                      _mapController = controller;
-                    },
-                    onCameraMoveStarted: () {
-                      widget.onInteractionChanged(true);
-                    },
-                    onCameraIdle: () {
-                      widget.onInteractionChanged(false);
-                    },
-                    onTap: (_) {
-                      widget.onPinSelected(null);
-                    },
-                  ),
-          ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final mapSize = Size(constraints.maxWidth, constraints.maxHeight);
 
-          // 2. Google Maps モード時の選択ピン吹き出しカード
-          if (!_useMockFallback &&
-              widget.selectedPin != null &&
-              !widget.selectedPin!.isRouteWaypointOnly)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 92,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: PinCalloutCard(
-                  pin: widget.selectedPin!,
-                  onOpenDetail: () =>
-                      widget.onOpenPinDetail(widget.selectedPin!),
-                  onClose: () => widget.onPinSelected(null),
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // 1. Google Map 本体（全段階で灰・白トンマナを維持し、高倍率のみ道路と有名スポットを表示）
+              Positioned.fill(
+                child: GoogleMap(
+                  initialCameraPosition: _initialCountryCameraPosition,
+                  style: _isDetailPinMode
+                      ? _detailedMapStyleJson
+                      : _outlineOnlyMapStyleJson,
+                  markers: _buildMarkers(),
+                  polylines: _buildPolylines(),
+                  circles: _buildWaypointCircles(),
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  mapToolbarEnabled: false,
+                  compassEnabled: false,
+                  rotateGesturesEnabled: false,
+                  tiltGesturesEnabled: false,
+                  gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                    Factory<OneSequenceGestureRecognizer>(
+                      EagerGestureRecognizer.new,
+                    ),
+                  },
+                  onMapCreated: (controller) {
+                    _mapController = controller;
+                  },
+                  onCameraMoveStarted: () {
+                    widget.onInteractionChanged(true);
+                  },
+                  onCameraMove: _updateCameraState,
+                  onCameraIdle: () {
+                    widget.onInteractionChanged(false);
+                  },
+                  onTap: (_) {
+                    widget.onPinSelected(null);
+                  },
                 ),
               ),
-            ),
 
-          // 3. 左下：全体表示＆マップモード切替補助ボタン
-          Positioned(
-            left: 16,
-            bottom: 28,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!_useMockFallback) ...[
-                  Material(
-                    color: AppTheme.pureWhite,
-                    elevation: 2,
-                    borderRadius: BorderRadius.circular(20),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: _fitAllPins,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.fit_screen_outlined,
-                              size: 16,
-                              color: AppTheme.darkGrey,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              '全体表示',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.darkGrey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+              // 2. 1倍（県の形に沿って写真表示）・中倍率（市の形に沿って写真表示）オーバーレイ
+              if (!_isDetailPinMode)
+                Positioned.fill(
+                  child: RegionPhotoOverlay(
+                    pins: widget.pins,
+                    cameraPosition: _currentCameraPosition,
+                    mapSize: mapSize,
+                    isCityMode: _isCityPhotoMode,
+                    onTapRegionPins: widget.onTapRegionPins,
                   ),
-                  const SizedBox(width: 8),
-                ],
-                Material(
+                ),
+
+              // 3. 高倍率時：ピンをタップした「その場の位置」にレビュー吹き出しを表示（クローズアップなし）
+              if (_isDetailPinMode &&
+                  widget.selectedPin != null &&
+                  !widget.selectedPin!.isRouteWaypointOnly)
+                Builder(
+                  builder: (context) {
+                    final activePin = widget.selectedPin!;
+                    final pinScreenOffset =
+                        RegionPhotoOverlay.latLngToScreenOffset(
+                          activePin.latLng,
+                          _currentCameraPosition,
+                          mapSize,
+                        );
+                    const double cardWidth = 250.0;
+                    const double cardHeight = 195.0;
+
+                    final double left = (pinScreenOffset.dx - cardWidth / 2)
+                        .clamp(
+                          12.0,
+                          (mapSize.width - cardWidth - 12.0).clamp(
+                            12.0,
+                            double.infinity,
+                          ),
+                        );
+                    final double top = (pinScreenOffset.dy - cardHeight - 36.0)
+                        .clamp(
+                          48.0,
+                          (mapSize.height - cardHeight - 80.0).clamp(
+                            48.0,
+                            double.infinity,
+                          ),
+                        );
+
+                    return Positioned(
+                      left: left,
+                      top: top,
+                      child: PinCalloutCard(
+                        pin: activePin,
+                        onOpenDetail: () => widget.onOpenPinDetail(activePin),
+                        onClose: () => widget.onPinSelected(null),
+                      ),
+                    );
+                  },
+                ),
+
+              // 4. 左下：ホームボタン（押したときには1倍の画面に戻す）
+              Positioned(
+                left: 16,
+                bottom: 28,
+                child: Material(
                   color: AppTheme.pureWhite.withValues(alpha: 0.92),
                   elevation: 2,
                   borderRadius: BorderRadius.circular(20),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(20),
-                    onTap: () {
-                      setState(() => _useMockFallback = !_useMockFallback);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
+                    onTap: _returnToHome1x,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            _useMockFallback
-                                ? Icons.public
-                                : Icons.map_outlined,
-                            size: 15,
-                            color: AppTheme.primaryGrey,
+                            Icons.home_outlined,
+                            size: 18,
+                            color: AppTheme.darkGrey,
                           ),
-                          const SizedBox(width: 4),
+                          SizedBox(width: 5),
                           Text(
-                            _useMockFallback ? 'Google Mapへ' : '簡易地図',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppTheme.primaryGrey,
+                            'ホーム',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.darkGrey,
                             ),
                           ),
                         ],
@@ -372,255 +491,11 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMockMapCanvas() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => widget.onPinSelected(null),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, constraints.maxHeight);
-          return InteractiveViewer(
-            minScale: 0.9,
-            maxScale: 2.8,
-            onInteractionStart: (_) => widget.onInteractionChanged(true),
-            onInteractionEnd: (_) => widget.onInteractionChanged(false),
-            child: SizedBox(
-              width: size.width,
-              height: size.height,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _MockJapanMapPainter(
-                        pins: widget.pins,
-                        showRouteLine: widget.showRouteLine,
-                      ),
-                    ),
-                  ),
-                  ...widget.pins.map((pin) {
-                    final point = Offset(
-                      pin.mapNormalizedPosition.dx * size.width,
-                      pin.mapNormalizedPosition.dy * size.height,
-                    );
-                    if (pin.isRouteWaypointOnly) {
-                      return Positioned(
-                        left: point.dx - 7,
-                        top: point.dy - 7,
-                        child: Tooltip(
-                          message: '${pin.placeName} (${pin.startTime})',
-                          child: Container(
-                            width: 14,
-                            height: 14,
-                            decoration: BoxDecoration(
-                              color: AppTheme.darkGrey,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: AppTheme.pureWhite,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-
-                    final isSelected = widget.selectedPin?.id == pin.id;
-                    return Positioned(
-                      left: point.dx - 18,
-                      top: point.dy - 36,
-                      child: GestureDetector(
-                        onTap: () => widget.onPinSelected(pin),
-                        child: AnimatedScale(
-                          duration: const Duration(milliseconds: 160),
-                          scale: isSelected ? 1.2 : 1.0,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: AppTheme.accentPinRed,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: AppTheme.pureWhite,
-                                    width: 2.5,
-                                  ),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Colors.black26,
-                                      blurRadius: 6,
-                                      offset: Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: const Center(
-                                  child: CircleAvatar(
-                                    radius: 4,
-                                    backgroundColor: AppTheme.pureWhite,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                width: 3,
-                                height: 8,
-                                color: AppTheme.darkGrey,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                  if (widget.selectedPin != null &&
-                      !widget.selectedPin!.isRouteWaypointOnly)
-                    Builder(
-                      builder: (context) {
-                        final activePin = widget.selectedPin!;
-                        final pinX =
-                            activePin.mapNormalizedPosition.dx * size.width;
-                        final pinY =
-                            activePin.mapNormalizedPosition.dy * size.height;
-                        final clampedLeft = (pinX - 125).clamp(
-                          16.0,
-                          (size.width - 266).clamp(16.0, double.infinity),
-                        );
-                        final topOffset = (pinY - 190).clamp(
-                          110.0,
-                          (size.height - 220).clamp(110.0, double.infinity),
-                        );
-                        return Positioned(
-                          left: clampedLeft,
-                          top: topOffset,
-                          child: PinCalloutCard(
-                            pin: activePin,
-                            onOpenDetail: () =>
-                                widget.onOpenPinDetail(activePin),
-                            onClose: () => widget.onPinSelected(null),
-                          ),
-                        );
-                      },
-                    ),
-                ],
               ),
-            ),
+            ],
           );
         },
       ),
     );
-  }
-}
-
-class _MockJapanMapPainter extends CustomPainter {
-  _MockJapanMapPainter({required this.pins, required this.showRouteLine});
-
-  final List<MemoryPin> pins;
-  final bool showRouteLine;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final bgPaint = Paint()..color = const Color(0xFFECEEF1);
-    canvas.drawRect(Offset.zero & size, bgPaint);
-
-    final gridPaint = Paint()
-      ..color = const Color(0xFFDDE1E6)
-      ..strokeWidth = 1;
-    for (double x = 0; x < size.width; x += 48) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-    for (double y = 0; y < size.height; y += 48) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    final landFill = Paint()
-      ..color = AppTheme.pureWhite
-      ..style = PaintingStyle.fill;
-    final landStroke = Paint()
-      ..color = AppTheme.mediumGrey
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-
-    final hokkaido = Path()
-      ..moveTo(size.width * 0.73, size.height * 0.16)
-      ..lineTo(size.width * 0.88, size.height * 0.18)
-      ..lineTo(size.width * 0.86, size.height * 0.27)
-      ..lineTo(size.width * 0.72, size.height * 0.26)
-      ..close();
-    canvas.drawPath(hokkaido, landFill);
-    canvas.drawPath(hokkaido, landStroke);
-
-    final honshu = Path()
-      ..moveTo(size.width * 0.70, size.height * 0.31)
-      ..lineTo(size.width * 0.78, size.height * 0.33)
-      ..lineTo(size.width * 0.74, size.height * 0.62)
-      ..lineTo(size.width * 0.35, size.height * 0.70)
-      ..lineTo(size.width * 0.31, size.height * 0.63)
-      ..lineTo(size.width * 0.62, size.height * 0.54)
-      ..close();
-    canvas.drawPath(honshu, landFill);
-    canvas.drawPath(honshu, landStroke);
-
-    final shikoku = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            size.width * 0.38,
-            size.height * 0.72,
-            size.width * 0.11,
-            size.height * 0.05,
-          ),
-          const Radius.circular(8),
-        ),
-      );
-    canvas.drawPath(shikoku, landFill);
-    canvas.drawPath(shikoku, landStroke);
-
-    final kyushu = Path()
-      ..addOval(
-        Rect.fromLTWH(
-          size.width * 0.21,
-          size.height * 0.71,
-          size.width * 0.12,
-          size.height * 0.11,
-        ),
-      );
-    canvas.drawPath(kyushu, landFill);
-    canvas.drawPath(kyushu, landStroke);
-
-    if (showRouteLine && pins.length >= 2) {
-      final routePaint = Paint()
-        ..color = AppTheme.darkGrey
-        ..strokeWidth = 2.2
-        ..style = PaintingStyle.stroke;
-
-      final routePath = Path();
-      for (int i = 0; i < pins.length; i++) {
-        final pt = Offset(
-          pins[i].mapNormalizedPosition.dx * size.width,
-          pins[i].mapNormalizedPosition.dy * size.height,
-        );
-        if (i == 0) {
-          routePath.moveTo(pt.dx, pt.dy);
-        } else {
-          routePath.lineTo(pt.dx, pt.dy);
-        }
-      }
-      canvas.drawPath(routePath, routePaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _MockJapanMapPainter oldDelegate) {
-    return oldDelegate.pins != pins ||
-        oldDelegate.showRouteLine != showRouteLine;
   }
 }

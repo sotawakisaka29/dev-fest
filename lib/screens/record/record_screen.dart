@@ -12,9 +12,10 @@ import 'time_range/time_range_section.dart';
 
 /// 記録作成画面（Googleフォト自動取得・端末アルバム写真選択対応）
 class RecordScreen extends StatefulWidget {
-  const RecordScreen({super.key, required this.teamId});
+  const RecordScreen({super.key, required this.teamId, this.activeTripId});
 
   final String teamId;
+  final String? activeTripId;
 
   @override
   State<RecordScreen> createState() => _RecordScreenState();
@@ -217,6 +218,9 @@ class _RecordScreenState extends State<RecordScreen> {
           ? 'とても良い時間を過ごせました。'
           : _commentController.text.trim(),
       photoLabels: _photos.map((p) => p.label).toList(),
+      photos: List<AppPhoto>.from(_photos),
+      recordedDate: _selectedDate,
+      tripId: widget.activeTripId,
       shareLocation: _shareLocation,
     );
 
