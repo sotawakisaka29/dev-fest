@@ -19,10 +19,11 @@ void main() {
     expect(initialMap.compassEnabled, isFalse);
     expect(find.byType(RegionPhotoOverlay), findsOneWidget);
 
-    // 削除対象ボタン（簡易地図・都道府県フォト）が存在せず、ホームボタンが存在すること
+    // 削除対象ボタン（簡易地図・都道府県フォト）および「ホーム」文字が存在せず、ホームアイコンボタンが存在すること
     expect(find.text('簡易地図'), findsNothing);
     expect(find.text('都道府県フォト'), findsNothing);
-    expect(find.text('ホーム'), findsOneWidget);
+    expect(find.text('ホーム'), findsNothing);
+    expect(find.byIcon(Icons.home_outlined), findsOneWidget);
 
     // 2. 左上メニュー要素（開始・思い出・招待・共有）が表示されていること
     expect(find.text('日常'), findsOneWidget);

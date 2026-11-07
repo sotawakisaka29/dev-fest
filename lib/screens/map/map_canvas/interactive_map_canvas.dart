@@ -453,40 +453,23 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
                   },
                 ),
 
-              // 4. 左下：ホームボタン（押したときには1倍の画面に戻す）
+              // 4. 右下：ホームボタン（アイコンのみ・押したときには1倍の画面に戻す）
               Positioned(
-                left: 16,
-                bottom: 28,
+                right: 16,
+                bottom: 24,
                 child: Material(
                   color: AppTheme.pureWhite.withValues(alpha: 0.92),
                   elevation: 2,
-                  borderRadius: BorderRadius.circular(20),
+                  shape: const CircleBorder(),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
+                    customBorder: const CircleBorder(),
                     onTap: _returnToHome1x,
                     child: const Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.home_outlined,
-                            size: 18,
-                            color: AppTheme.darkGrey,
-                          ),
-                          SizedBox(width: 5),
-                          Text(
-                            'ホーム',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.darkGrey,
-                            ),
-                          ),
-                        ],
+                      padding: EdgeInsets.all(16),
+                      child: Icon(
+                        Icons.home_outlined,
+                        size: 24,
+                        color: AppTheme.darkGrey,
                       ),
                     ),
                   ),
