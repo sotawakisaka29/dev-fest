@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'app_photo.dart';
 
 /// 地図上の訪問地点・思い出・レビューを表すモデル
 ///
@@ -20,6 +21,9 @@ class MemoryPin {
     required this.rating,
     required this.comment,
     required this.photoLabels,
+    this.photos = const [],
+    this.recordedDate,
+    this.tripId,
     this.shareLocation = true,
     this.isRouteWaypointOnly = false,
   });
@@ -47,10 +51,82 @@ class MemoryPin {
   final int rating;
   final String comment;
   final List<String> photoLabels;
+
+  /// 端末アルバムやGoogleフォトから選択された実写真データリスト
+  final List<AppPhoto> photos;
+
+  /// 記録日（未指定時は当日扱い）
+  final DateTime? recordedDate;
+
+  /// 紐づく旅行ID（旅行スタート〜停止の間に記録された場合）
+  final String? tripId;
+
   final bool shareLocation;
 
   /// true の場合は特定の場所レビューではなくルート線上の黒丸として表示する
   final bool isRouteWaypointOnly;
+
+  /// 住所文字列から市区町村名（例: 江東区、鎌倉市、京都市、札幌市、箱根町）を抽出する
+  String get city {
+    var rest = address;
+    if (prefecture.isNotEmpty && rest.startsWith(prefecture)) {
+      rest = rest.substring(prefecture.length);
+    }
+    final match = RegExp(r'^([^0-9０-９\-ー]+?[市区町村])').firstMatch(rest);
+    if (match != null) {
+      final raw = match.group(1)!;
+      // 「足柄下郡箱根町」のように郡が含まれる場合は町・村名を優先表示
+      final gunSplit = raw.split('郡');
+      if (gunSplit.length > 1 && gunSplit.last.isNotEmpty) {
+        return gunSplit.last;
+      }
+      return raw;
+    }
+    return prefecture;
+  }
+
+  MemoryPin copyWith({
+    String? id,
+    String? teamId,
+    String? placeName,
+    String? address,
+    String? prefecture,
+    double? latitude,
+    double? longitude,
+    Offset? mapNormalizedPosition,
+    String? startTime,
+    String? endTime,
+    int? rating,
+    String? comment,
+    List<String>? photoLabels,
+    List<AppPhoto>? photos,
+    DateTime? recordedDate,
+    String? tripId,
+    bool? shareLocation,
+    bool? isRouteWaypointOnly,
+  }) {
+    return MemoryPin(
+      id: id ?? this.id,
+      teamId: teamId ?? this.teamId,
+      placeName: placeName ?? this.placeName,
+      address: address ?? this.address,
+      prefecture: prefecture ?? this.prefecture,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      mapNormalizedPosition:
+          mapNormalizedPosition ?? this.mapNormalizedPosition,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      rating: rating ?? this.rating,
+      comment: comment ?? this.comment,
+      photoLabels: photoLabels ?? this.photoLabels,
+      photos: photos ?? this.photos,
+      recordedDate: recordedDate ?? this.recordedDate,
+      tripId: tripId ?? this.tripId,
+      shareLocation: shareLocation ?? this.shareLocation,
+      isRouteWaypointOnly: isRouteWaypointOnly ?? this.isRouteWaypointOnly,
+    );
+  }
 
   static const List<MemoryPin> initialSamplePins = [
     MemoryPin(
@@ -67,6 +143,7 @@ class MemoryPin {
       rating: 5,
       comment: '浅煎りのハンドドリップが絶品。静かな朝の時間を楽しめた。',
       photoLabels: ['ラテアート', '外観', 'テラス席'],
+      tripId: 'trip_kanto_day',
     ),
     MemoryPin(
       id: 'pin_waypoint_1',
@@ -80,9 +157,10 @@ class MemoryPin {
       startTime: '13:00',
       endTime: '13:20',
       rating: 0,
-      comment: '',
+      comment: '東京湾を一望できるパーキングエリアで小休憩。',
       photoLabels: [],
       isRouteWaypointOnly: true,
+      tripId: 'trip_kanto_day',
     ),
     MemoryPin(
       id: 'pin_kamakura',
@@ -98,6 +176,7 @@ class MemoryPin {
       rating: 4,
       comment: '夕暮れの江ノ島と富士山がきれいに見えた思い出の場所。',
       photoLabels: ['夕焼けの海', 'パンケーキ'],
+      tripId: 'trip_kanto_day',
     ),
     MemoryPin(
       id: 'pin_kyoto',
@@ -113,6 +192,7 @@ class MemoryPin {
       rating: 5,
       comment: '早朝に訪問したため人が少なく、風が吹く音まで心地よかった。',
       photoLabels: ['竹林', '渡月橋'],
+      tripId: 'trip_kyoto_autumn',
     ),
     MemoryPin(
       id: 'pin_sapporo',
@@ -128,6 +208,7 @@ class MemoryPin {
       rating: 4,
       comment: '夜風が涼しく、スープカレーとシメパフェを満喫。',
       photoLabels: ['時計台夜景', 'スープカレー'],
+      tripId: 'trip_hokkaido_gourmet',
     ),
     MemoryPin(
       id: 'pin_hakone_1',
@@ -143,6 +224,7 @@ class MemoryPin {
       rating: 5,
       comment: 'チームみんなで露天風呂と懐石料理を満喫！',
       photoLabels: ['露天風呂', '夕食', '集合写真'],
+      tripId: 'trip_hakone_onsen',
     ),
     MemoryPin(
       id: 'pin_cafe_1',
@@ -158,6 +240,7 @@ class MemoryPin {
       rating: 4,
       comment: '読書しながら過ごせる落ち着いた空間。チーズケーキが濃厚。',
       photoLabels: ['チーズケーキ', '本棚'],
+      tripId: 'trip_daikanyama_cafe',
     ),
   ];
 }

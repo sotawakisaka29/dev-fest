@@ -128,32 +128,35 @@ class InviteButton extends StatelessWidget {
     );
   }
 
+  static const List<Shadow> _labelShadows = [
+    Shadow(color: Colors.white, blurRadius: 8),
+    Shadow(color: Colors.white, blurRadius: 14),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () => _showInviteSheet(context),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.mail_outline, size: 24, color: AppTheme.darkGrey),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.only(bottom: 2),
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: AppTheme.darkGrey, width: 1.2),
-                ),
-              ),
-              child: const Text(
-                '招待する',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.darkGrey,
-                ),
+            Icon(
+              Icons.mail_outline,
+              size: 29,
+              color: AppTheme.darkGrey,
+              shadows: _labelShadows,
+            ),
+            SizedBox(height: 4),
+            Text(
+              '招待する',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.darkGrey,
+                shadows: _labelShadows,
               ),
             ),
           ],
