@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/models/app_photo.dart';
 import '../../core/models/memory_pin.dart';
-import '../../core/services/auth_service.dart';
 import '../../core/services/google_photos_service.dart';
 import '../../core/theme/app_theme.dart';
 import 'location_input/location_input_section.dart';
@@ -10,7 +9,7 @@ import 'photo_picker/photo_picker_section.dart';
 import 'review_input/review_input_section.dart';
 import 'time_range/time_range_section.dart';
 
-/// 記録作成画面（Googleフォト自動取得・端末アルバム写真選択対応）
+/// 記録作成画面（端末アルバム＆Google Photos Picker API並行対応）
 class RecordScreen extends StatefulWidget {
   const RecordScreen({super.key, required this.teamId});
 
@@ -20,7 +19,8 @@ class RecordScreen extends StatefulWidget {
   State<RecordScreen> createState() => _RecordScreenState();
 }
 
-class _RecordScreenState extends State<RecordScreen> {
+class _RecordScreenState extends State<RecordScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _placeController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
@@ -39,78 +39,35 @@ class _RecordScreenState extends State<RecordScreen> {
 
   final List<AppPhoto> _photos = [];
   bool _isLoadingPhotos = false;
+  String _loadingMessage = 'Googleフォトを起動中...';
 
   @override
   void initState() {
     super.initState();
-    // 画面初期化時に、選択されている日時のGoogleフォトを自動検索
-    _fetchPhotosForCurrentRange();
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _placeController.dispose();
     _commentController.dispose();
     super.dispose();
   }
 
-  DateTime get _startDateTime => DateTime(
-    _selectedDate.year,
-    _selectedDate.month,
-    _selectedDate.day,
-    _startTime.hour,
-    _startTime.minute,
-  );
-
-  DateTime get _endDateTime => DateTime(
-    _selectedDate.year,
-    _selectedDate.month,
-    _selectedDate.day,
-    _endTime.hour,
-    _endTime.minute,
-  );
-
-  /// 日時範囲が変更されたときに Google フォトAPIから実データを自動取得する
-  Future<void> _fetchPhotosForCurrentRange() async {
-    setState(() => _isLoadingPhotos = true);
-
-    try {
-      final googleUser = AuthService.instance.currentGoogleUser;
-      final result = await GooglePhotosService.instance.searchPhotos(
-        start: _startDateTime,
-        end: _endDateTime,
-        currentUser: googleUser,
-      );
-
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isLoadingPhotos) {
       if (mounted) {
         setState(() {
-          // 手動でアルバム等から追加された写真は保持し、Googleフォト自動取得分のみ差し替え
-          final manualPhotos = _photos.where((p) => !p.isFromGooglePhotos).toList();
-          _photos.clear();
-          _photos.addAll(manualPhotos);
-          _photos.addAll(result.photos);
-          _isLoadingPhotos = false;
+          _loadingMessage = '写真の選択結果を確認中...';
         });
-
-        // 通信結果やエラー理由をユーザーにスナックバーで通知
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message, style: const TextStyle(fontSize: 13)),
-            duration: Duration(seconds: result.success ? 3 : 5),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: result.success ? null : Colors.redAccent.shade700,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingPhotos = false);
       }
     }
   }
 
-  /// 端末のアルバムまたはカメラから写真を手動追加する
-  Future<void> _handlePickPhoto() async {
+  /// 端末のアルバムまたはカメラから写真を手動追加する（既存機能の維持）
+  Future<void> _handlePickFromGallery() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: AppTheme.pureWhite,
@@ -123,12 +80,18 @@ class _RecordScreenState extends State<RecordScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined, color: AppTheme.darkGrey),
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: AppTheme.darkGrey,
+                ),
                 title: const Text('アルバムから選択（ギャラリー）'),
                 onTap: () => Navigator.of(context).pop(ImageSource.gallery),
               ),
               ListTile(
-                leading: const Icon(Icons.camera_alt_outlined, color: AppTheme.darkGrey),
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppTheme.darkGrey,
+                ),
                 title: const Text('カメラで撮影'),
                 onTap: () => Navigator.of(context).pop(ImageSource.camera),
               ),
@@ -148,9 +111,9 @@ class _RecordScreenState extends State<RecordScreen> {
           setState(() {
             for (final file in pickedFiles) {
               _photos.insert(
-                0, // 手動追加された写真を先頭付近に追加
+                0,
                 AppPhoto(
-                  id: 'local_${DateTime.now().microsecondsSinceEpoch}',
+                  id: 'local_${DateTime.now().microsecondsSinceEpoch}_${file.name}',
                   label: file.name.isNotEmpty ? file.name : 'アルバム写真',
                   localPath: file.path,
                   takenAt: DateTime.now(),
@@ -162,7 +125,9 @@ class _RecordScreenState extends State<RecordScreen> {
         }
       } else {
         // カメラ撮影
-        final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera);
+        final pickedFile = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+        );
         if (pickedFile != null && mounted) {
           setState(() {
             _photos.insert(
@@ -186,6 +151,76 @@ class _RecordScreenState extends State<RecordScreen> {
             backgroundColor: Colors.redAccent,
           ),
         );
+      }
+    }
+  }
+
+  /// Google Photos Picker API を利用して写真を選択する（新規並行機能）
+  Future<void> _handlePickFromGooglePhotos() async {
+    if (_isLoadingPhotos) return; // 多重タップ防止
+
+    setState(() {
+      _isLoadingPhotos = true;
+      _loadingMessage = 'Googleフォトを起動中...';
+    });
+
+    try {
+      final result = await GooglePhotosService.instance
+          .pickPhotosFromGooglePhotos();
+
+      if (!mounted) return;
+
+      if (result.isSuccess) {
+        setState(() {
+          // 既存の写真は維持したまま、Googleフォトから新しく選択された写真を追加
+          _photos.addAll(result.photos);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Googleフォトから ${result.photos.length} 枚の写真を追加しました',
+              style: const TextStyle(fontSize: 13),
+            ),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // ユーザーキャンセルやエラー時のフィードバック
+        final isCancel =
+            result.errorType == GooglePhotosErrorType.userCancelled ||
+            result.errorType == GooglePhotosErrorType.noPhotosSelected;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.message ?? '写真の選択を完了できませんでした。',
+              style: const TextStyle(fontSize: 13),
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: isCancel
+                ? AppTheme.darkGrey
+                : Colors.redAccent.shade700,
+            duration: Duration(seconds: isCancel ? 2 : 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('エラーが発生しました: $e'),
+            backgroundColor: Colors.redAccent.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingPhotos = false;
+        });
       }
     }
   }
@@ -281,23 +316,20 @@ class _RecordScreenState extends State<RecordScreen> {
               const SizedBox(height: 20),
               const Divider(),
               const SizedBox(height: 16),
-              // 日時帯の選択セクション（変更時にGoogleフォト本番API再検索）
+              // 日時帯の選択セクション（訪問記録メタデータとして維持）
               TimeRangeSection(
                 selectedDate: _selectedDate,
                 startTime: _startTime,
                 endTime: _endTime,
-                isLoadingPhotos: _isLoadingPhotos,
+                isLoadingPhotos: false,
                 onDateChanged: (date) {
                   setState(() => _selectedDate = date);
-                  _fetchPhotosForCurrentRange();
                 },
                 onStartTimeChanged: (time) {
                   setState(() => _startTime = time);
-                  _fetchPhotosForCurrentRange();
                 },
                 onEndTimeChanged: (time) {
                   setState(() => _endTime = time);
-                  _fetchPhotosForCurrentRange();
                 },
               ),
               const SizedBox(height: 20),
@@ -311,12 +343,13 @@ class _RecordScreenState extends State<RecordScreen> {
               const SizedBox(height: 20),
               const Divider(),
               const SizedBox(height: 16),
-              // 写真セクション（先頭手動追加・アルバム選択＆Googleフォト本番連動）
+              // 写真セクション（端末アルバム選択 ＆ Google Photos Picker API並行対応）
               PhotoPickerSection(
                 photos: _photos,
                 isLoading: _isLoadingPhotos,
-                onRefreshFromGooglePhotos: _fetchPhotosForCurrentRange,
-                onAddPhoto: _handlePickPhoto,
+                loadingMessage: _loadingMessage,
+                onAddFromGallery: _handlePickFromGallery,
+                onPickFromGooglePhotos: _handlePickFromGooglePhotos,
                 onRemovePhotoAt: (index) {
                   setState(() {
                     _photos.removeAt(index);

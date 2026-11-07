@@ -3,22 +3,24 @@ import 'package:flutter/material.dart';
 import '../../../../core/models/app_photo.dart';
 import '../../../../core/theme/app_theme.dart';
 
-/// 写真選択・管理セクション（Googleフォト本番連携＆端末アルバム選択対応）
+/// 写真選択・管理セクション（端末アルバム・Googleフォト選択の並行対応）
 class PhotoPickerSection extends StatelessWidget {
   const PhotoPickerSection({
     super.key,
     required this.photos,
-    required this.onAddPhoto,
+    required this.onAddFromGallery,
+    required this.onPickFromGooglePhotos,
     required this.onRemovePhotoAt,
     this.isLoading = false,
-    this.onRefreshFromGooglePhotos,
+    this.loadingMessage = 'Googleフォトを起動中...',
   });
 
   final List<AppPhoto> photos;
-  final VoidCallback onAddPhoto;
+  final VoidCallback onAddFromGallery;
+  final VoidCallback onPickFromGooglePhotos;
   final ValueChanged<int> onRemovePhotoAt;
   final bool isLoading;
-  final VoidCallback? onRefreshFromGooglePhotos;
+  final String loadingMessage;
 
   Widget _buildPhotoImage(AppPhoto photo) {
     // 1. 端末アルバムから選択されたローカル写真の場合
@@ -30,7 +32,10 @@ class PhotoPickerSection extends StatelessWidget {
         errorBuilder: (_, _, _) => Container(
           color: AppTheme.lightGrey,
           child: const Center(
-            child: Icon(Icons.broken_image_outlined, color: AppTheme.mediumGrey),
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: AppTheme.mediumGrey,
+            ),
           ),
         ),
       );
@@ -57,7 +62,10 @@ class PhotoPickerSection extends StatelessWidget {
         errorBuilder: (_, _, _) => Container(
           color: AppTheme.surfaceGrey,
           child: const Center(
-            child: Icon(Icons.broken_image_outlined, color: AppTheme.mediumGrey),
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: AppTheme.mediumGrey,
+            ),
           ),
         ),
       );
@@ -67,7 +75,11 @@ class PhotoPickerSection extends StatelessWidget {
     return Container(
       color: AppTheme.lightGrey,
       child: const Center(
-        child: Icon(Icons.photo_outlined, size: 28, color: AppTheme.primaryGrey),
+        child: Icon(
+          Icons.photo_outlined,
+          size: 28,
+          color: AppTheme.primaryGrey,
+        ),
       ),
     );
   }
@@ -123,34 +135,71 @@ class PhotoPickerSection extends StatelessWidget {
                 ),
               ],
             ),
-            Row(
-              children: [
-                if (onRefreshFromGooglePhotos != null)
-                  TextButton.icon(
-                    onPressed: isLoading ? null : onRefreshFromGooglePhotos,
-                    icon: const Icon(Icons.sync, size: 16),
-                    label: const Text('Googleフォト再取得', style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // 写真追加アクションボタン群（端末アルバム + Googleフォト並行）
+        Row(
+          children: [
+            // 端末アルバムから追加ボタン
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: isLoading ? null : onAddFromGallery,
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                label: const Text(
+                  'アルバムから選択',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.darkGrey,
+                  side: const BorderSide(color: AppTheme.darkGrey),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-              ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Googleフォトから選択ボタン
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: isLoading ? null : onPickFromGooglePhotos,
+                icon: const Icon(Icons.add_photo_alternate, size: 18),
+                label: const Text(
+                  'Googleフォトから選択',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.darkGrey,
+                  foregroundColor: AppTheme.pureWhite,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 14),
 
         if (isLoading)
           Container(
-            height: 130,
+            height: 100,
             width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 14),
             decoration: BoxDecoration(
               color: AppTheme.surfaceGrey,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppTheme.lightGrey),
             ),
-            child: const Center(
+            child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
+                  const SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
@@ -158,21 +207,58 @@ class PhotoPickerSection extends StatelessWidget {
                       color: AppTheme.darkGrey,
                     ),
                   ),
-                  SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Text(
-                    'Googleフォトから写真を取得中...',
-                    style: TextStyle(fontSize: 12, color: AppTheme.primaryGrey),
+                    loadingMessage,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.primaryGrey,
+                    ),
                   ),
                 ],
               ),
             ),
+          ),
+
+        // 写真一覧グリッド（選択された写真のみ表示）
+        if (photos.isEmpty && !isLoading)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceGrey,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.lightGrey),
+            ),
+            child: const Column(
+              children: [
+                Icon(
+                  Icons.image_not_supported_outlined,
+                  size: 36,
+                  color: AppTheme.mediumGrey,
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '写真がまだ追加されていません',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primaryGrey,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'アルバムまたはGoogleフォトから写真を追加できます',
+                  style: TextStyle(fontSize: 10, color: AppTheme.mediumGrey),
+                ),
+              ],
+            ),
           )
         else
-          // 縦スクロール対応の3列グリッドレイアウト（先頭に手動追加カード）
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: photos.length + 1,
+            itemCount: photos.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
               crossAxisSpacing: 10,
@@ -180,54 +266,7 @@ class PhotoPickerSection extends StatelessWidget {
               childAspectRatio: 0.82,
             ),
             itemBuilder: (context, index) {
-              // 1番目（先頭）：手動追加ボタンカード（端末アルバムを開く）
-              if (index == 0) {
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: onAddPhoto,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceGrey,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppTheme.darkGrey,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.add_photo_alternate_rounded,
-                          size: 32,
-                          color: AppTheme.darkGrey,
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          '写真を選択',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.darkGrey,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'アルバムから追加',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: AppTheme.primaryGrey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              // 2番目以降：実際の写真カード（index - 1）
-              final photoIndex = index - 1;
-              final photo = photos[photoIndex];
+              final photo = photos[index];
 
               return Stack(
                 clipBehavior: Clip.none,
@@ -251,9 +290,7 @@ class PhotoPickerSection extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // 写真プレビュー画像（ローカル or リモート）
-                          Expanded(
-                            child: _buildPhotoImage(photo),
-                          ),
+                          Expanded(child: _buildPhotoImage(photo)),
                           // 下部キャプション＆撮影時間
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -311,7 +348,7 @@ class PhotoPickerSection extends StatelessWidget {
                     right: -4,
                     top: -4,
                     child: InkWell(
-                      onTap: () => onRemovePhotoAt(photoIndex),
+                      onTap: () => onRemovePhotoAt(index),
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
                         width: 22,

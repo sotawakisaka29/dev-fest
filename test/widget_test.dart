@@ -39,6 +39,8 @@ void main() {
     expect(find.text('場所を入力'), findsOneWidget);
     expect(find.text('口コミ'), findsOneWidget);
     expect(find.text('写真'), findsOneWidget);
+    expect(find.text('アルバムから選択'), findsOneWidget);
+    expect(find.text('Googleフォトから選択'), findsOneWidget);
 
     // 「✓」アイコンで保存してメイン画面へ戻ることを確認
     await tester.tap(find.byIcon(Icons.check));

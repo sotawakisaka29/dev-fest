@@ -3,7 +3,7 @@ import '../../../../core/theme/app_theme.dart';
 
 /// 記録画面の日時（日付＋時間帯）指定セクション
 ///
-/// Googleフォトと連携し、ここで選択された日時に応じて自動で写真を取得する。
+/// 訪問記録のメタデータとして、訪問日および滞在時間帯をユーザーが指定する。
 class TimeRangeSection extends StatelessWidget {
   const TimeRangeSection({
     super.key,
