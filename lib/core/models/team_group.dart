@@ -80,14 +80,20 @@ class TeamGroup {
       created = DateTime.tryParse(data['createdAt'] as String);
     }
 
+    final isPersonalGroup =
+        (data['isPersonal'] as bool? ?? false) || id.startsWith('daily');
+    final rawName = data['name'] as String? ?? '名称未設定';
+
     return TeamGroup(
       id: id,
-      name: data['name'] as String? ?? '名称未設定',
-      memberCount: members.isNotEmpty ? members.length : 1,
-      inviteCode: data['inviteCode'] as String? ?? '',
+      name: isPersonalGroup ? 'MyMap' : rawName,
+      memberCount: isPersonalGroup
+          ? 1
+          : (members.isNotEmpty ? members.length : 1),
+      inviteCode: isPersonalGroup ? '' : (data['inviteCode'] as String? ?? ''),
       ownerUid: data['ownerUid'] as String? ?? '',
       memberUids: members,
-      isPersonal: data['isPersonal'] as bool? ?? false,
+      isPersonal: isPersonalGroup,
       createdAt: created,
     );
   }
@@ -95,9 +101,9 @@ class TeamGroup {
   static const List<TeamGroup> sampleTeams = [
     TeamGroup(
       id: 'daily',
-      name: '日常',
+      name: 'MyMap',
       memberCount: 1,
-      inviteCode: 'MYMAP001',
+      inviteCode: '',
       isPersonal: true,
     ),
     TeamGroup(

@@ -47,13 +47,49 @@ class AuthService {
   // デフォルトで暗黙的に要求される email / profile は明示指定せず、空のスコープで初期化する
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  /// Firebase未初期化時（ローカル/テストモード）のサインイン状態保持用
+  AppUser? _localFallbackUser;
+
+  /// 「ゲストとして参加」が選択されゲスト状態が保持されているかどうか
+  bool _isGuestSessionActive = false;
+
+  final StreamController<AppUser> _localAuthStateController =
+      StreamController<AppUser>.broadcast();
+
+  /// ログイン済みまたは「ゲストとして参加」選択済みかどうか（falseの場合は初回ログイン画面を表示）
+  bool get hasActiveSession =>
+      _auth?.currentUser != null ||
+      _localFallbackUser != null ||
+      _isGuestSessionActive;
+
+  /// ゲストとして参加（ゲスト状態を保持してサンプルデータを表示するモードへ移行）
+  AppUser enterGuestMode() {
+    _isGuestSessionActive = true;
+    _localFallbackUser = null;
+    _localAuthStateController.add(AppUser.demoUser);
+    return AppUser.demoUser;
+  }
+
   /// ログイン中のGoogleSignInAccountを取得（Google Photos APIリクエスト等で使用）
   GoogleSignInAccount? get currentGoogleUser => _googleSignIn.currentUser;
+
+  /// ログイン中のGoogleSignInAccountを取得（メモリ上にない場合はサイレントサインインで復元を試行）
+  Future<GoogleSignInAccount?> ensureGoogleUser() async {
+    var user = _googleSignIn.currentUser;
+    if (user != null) return user;
+    if (currentUser.isAnonymous) return null;
+    try {
+      user = await _googleSignIn.signInSilently();
+    } catch (e) {
+      debugPrint('Google signInSilently failed: $e');
+    }
+    return user;
+  }
 
   /// Photo Picker スコープの追加認可を要求する（段階的認可・詳細結果返却）
   Future<ScopeRequestResult> requestPhotoPickerScopeDetailed() async {
     try {
-      final user = _googleSignIn.currentUser;
+      final user = await ensureGoogleUser();
       if (user == null) {
         return ScopeRequestResult.failed;
       }
@@ -136,7 +172,7 @@ class AuthService {
 
   /// 現在のGoogle認証アクセストークンを取得する（秘密情報はログに出力しない）
   Future<String?> getGoogleAccessToken() async {
-    final user = _googleSignIn.currentUser;
+    final user = await ensureGoogleUser();
     if (user == null) return null;
     final auth = await user.authentication;
     return auth.accessToken;
@@ -168,29 +204,39 @@ class AuthService {
         isAnonymous: firebaseUser.isAnonymous,
       );
     }
-    return AppUser.demoUser;
+    return _localFallbackUser ?? AppUser.demoUser;
   }
 
   /// ユーザー認証状態ストリーム
   Stream<AppUser> get authStateChanges {
     final auth = _auth;
     if (auth == null) {
-      return Stream.value(currentUser);
+      return _localAuthStateController.stream;
     }
-    return auth.authStateChanges().map((firebaseUser) {
-      if (firebaseUser != null) {
-        return AppUser(
-          uid: firebaseUser.uid,
-          displayName:
-              firebaseUser.displayName ??
-              firebaseUser.email?.split('@').first ??
-              'ユーザー',
-          email: firebaseUser.email ?? '',
-          photoUrl: firebaseUser.photoURL,
-          isAnonymous: firebaseUser.isAnonymous,
-        );
-      }
-      return AppUser.demoUser;
+    return Stream<AppUser>.multi((controller) {
+      final sub1 = auth.authStateChanges().listen((firebaseUser) {
+        if (firebaseUser != null) {
+          controller.add(
+            AppUser(
+              uid: firebaseUser.uid,
+              displayName:
+                  firebaseUser.displayName ??
+                  firebaseUser.email?.split('@').first ??
+                  'ユーザー',
+              email: firebaseUser.email ?? '',
+              photoUrl: firebaseUser.photoURL,
+              isAnonymous: firebaseUser.isAnonymous,
+            ),
+          );
+        } else {
+          controller.add(currentUser);
+        }
+      });
+      final sub2 = _localAuthStateController.stream.listen(controller.add);
+      controller.onCancel = () {
+        sub1.cancel();
+        sub2.cancel();
+      };
     });
   }
 
@@ -199,11 +245,15 @@ class AuthService {
     try {
       if (!isFirebaseInitialized) {
         debugPrint('Firebase is not initialized yet. Using demo fallback.');
-        return const AppUser(
+        const fallbackUser = AppUser(
           uid: 'google_demo_uid_12345',
           displayName: 'Google Test User',
           email: 'google.test@example.com',
         );
+        _localFallbackUser = fallbackUser;
+        _isGuestSessionActive = false;
+        _localAuthStateController.add(fallbackUser);
+        return fallbackUser;
       }
 
       final googleUser = await _googleSignIn.signIn();
@@ -224,26 +274,38 @@ class AuthService {
         throw Exception('Firebaseログインに失敗しました。');
       }
 
-      return AppUser(
+      final appUser = AppUser(
         uid: user.uid,
         displayName:
             user.displayName ?? googleUser.displayName ?? 'Google User',
         email: user.email ?? googleUser.email,
         photoUrl: user.photoURL ?? googleUser.photoUrl,
       );
+      _isGuestSessionActive = false;
+      _localAuthStateController.add(appUser);
+      return appUser;
     } catch (e) {
       debugPrint('Google Sign-In error: $e');
       rethrow;
     }
   }
 
-  /// サインアウト
+  /// サインアウト（Googleログインを解除し、ゲスト状態を保持して戻る）
   Future<void> signOut() async {
+    _localFallbackUser = null;
+    _isGuestSessionActive = true;
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
     if (_auth != null) {
       await _auth!.signOut();
     }
+    _localAuthStateController.add(AppUser.demoUser);
+  }
+
+  /// 初回ログインゲート表示状態にリセットする（テスト・初期化用）
+  void resetToInitialGate() {
+    _localFallbackUser = null;
+    _isGuestSessionActive = false;
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/models/app_photo.dart';
 import '../../core/models/memory_pin.dart';
+import '../../core/services/auth_service.dart';
 import '../../core/services/google_photos_service.dart';
 import '../../core/theme/app_theme.dart';
 import 'location_input/location_input_section.dart';
@@ -159,6 +160,20 @@ class _RecordScreenState extends State<RecordScreen>
   /// Google Photos Picker API を利用して写真を選択する（新規並行機能）
   Future<void> _handlePickFromGooglePhotos() async {
     if (_isLoadingPhotos) return; // 多重タップ防止
+
+    if (AuthService.instance.currentUser.isAnonymous) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Googleフォトから選択するにはGoogleアカウントでログインしてください。',
+            style: TextStyle(fontSize: 13),
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent.shade700,
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _isLoadingPhotos = true;

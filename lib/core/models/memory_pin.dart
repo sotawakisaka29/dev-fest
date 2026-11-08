@@ -128,6 +128,87 @@ class MemoryPin {
     );
   }
 
+  Map<String, dynamic> toFirestore() {
+    return {
+      'teamId': teamId,
+      'placeName': placeName,
+      'address': address,
+      'prefecture': prefecture,
+      'latitude': latitude,
+      'longitude': longitude,
+      'normX': mapNormalizedPosition.dx,
+      'normY': mapNormalizedPosition.dy,
+      'startTime': startTime,
+      'endTime': endTime,
+      'rating': rating,
+      'comment': comment,
+      'photoLabels': photoLabels,
+      'photos': photos
+          .map(
+            (p) => {
+              'id': p.id,
+              'label': p.label,
+              'url': p.url,
+              'localPath': p.localPath,
+              'takenAt': p.takenAt?.toIso8601String(),
+              'isFromGooglePhotos': p.isFromGooglePhotos,
+            },
+          )
+          .toList(),
+      'recordedDate': recordedDate?.toIso8601String(),
+      'tripId': tripId,
+      'shareLocation': shareLocation,
+      'isRouteWaypointOnly': isRouteWaypointOnly,
+    };
+  }
+
+  factory MemoryPin.fromFirestore(String id, Map<String, dynamic> data) {
+    final labels =
+        (data['photoLabels'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        <String>[];
+    final rawPhotos = data['photos'] as List<dynamic>? ?? const [];
+    final parsedPhotos = rawPhotos.whereType<Map<String, dynamic>>().map((m) {
+      return AppPhoto(
+        id: m['id'] as String? ?? '',
+        label: m['label'] as String? ?? '',
+        url: m['url'] as String?,
+        localPath: m['localPath'] as String?,
+        takenAt: m['takenAt'] is String
+            ? DateTime.tryParse(m['takenAt'] as String)
+            : null,
+        isFromGooglePhotos: m['isFromGooglePhotos'] as bool? ?? true,
+      );
+    }).toList();
+
+    return MemoryPin(
+      id: id,
+      teamId: data['teamId'] as String? ?? '',
+      placeName: data['placeName'] as String? ?? '名称未設定',
+      address: data['address'] as String? ?? '',
+      prefecture: data['prefecture'] as String? ?? '東京都',
+      latitude: (data['latitude'] as num?)?.toDouble() ?? 35.6812,
+      longitude: (data['longitude'] as num?)?.toDouble() ?? 139.7671,
+      mapNormalizedPosition: Offset(
+        (data['normX'] as num?)?.toDouble() ?? 0.66,
+        (data['normY'] as num?)?.toDouble() ?? 0.56,
+      ),
+      startTime: data['startTime'] as String? ?? '10:00',
+      endTime: data['endTime'] as String? ?? '11:00',
+      rating: (data['rating'] as num?)?.toInt() ?? 0,
+      comment: data['comment'] as String? ?? '',
+      photoLabels: labels,
+      photos: parsedPhotos,
+      recordedDate: data['recordedDate'] is String
+          ? DateTime.tryParse(data['recordedDate'] as String)
+          : null,
+      tripId: data['tripId'] as String?,
+      shareLocation: data['shareLocation'] as bool? ?? true,
+      isRouteWaypointOnly: data['isRouteWaypointOnly'] as bool? ?? false,
+    );
+  }
+
   static const List<MemoryPin> initialSamplePins = [
     MemoryPin(
       id: 'pin_tokyo_cafe',

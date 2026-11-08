@@ -98,6 +98,39 @@ class TripMemory {
 
   static double _degToRad(double deg) => deg * (math.pi / 180.0);
 
+  Map<String, dynamic> toFirestore() {
+    return {
+      'teamId': teamId,
+      'title': title,
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate.toIso8601String(),
+      'customDistanceKm': customDistanceKm,
+      'pins': pins.map((p) => {'id': p.id, ...p.toFirestore()}).toList(),
+    };
+  }
+
+  factory TripMemory.fromFirestore(String id, Map<String, dynamic> data) {
+    final rawPins = data['pins'] as List<dynamic>? ?? const [];
+    final parsedPins = rawPins.whereType<Map<String, dynamic>>().map((m) {
+      final pinId = m['id'] as String? ?? 'pin_${ m.hashCode }';
+      return MemoryPin.fromFirestore(pinId, m);
+    }).toList();
+
+    return TripMemory(
+      id: id,
+      teamId: data['teamId'] as String? ?? '',
+      title: data['title'] as String? ?? '新しい旅行',
+      startDate: data['startDate'] is String
+          ? (DateTime.tryParse(data['startDate'] as String) ?? DateTime.now())
+          : DateTime.now(),
+      endDate: data['endDate'] is String
+          ? (DateTime.tryParse(data['endDate'] as String) ?? DateTime.now())
+          : DateTime.now(),
+      pins: parsedPins,
+      customDistanceKm: (data['customDistanceKm'] as num?)?.toDouble(),
+    );
+  }
+
   /// 初期サンプル思い出リスト
   static List<TripMemory> buildInitialSampleMemories(List<MemoryPin> allPins) {
     final kantoPins = allPins

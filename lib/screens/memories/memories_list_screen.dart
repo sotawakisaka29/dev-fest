@@ -113,7 +113,7 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
                       ),
                       SizedBox(height: 16),
                       Text(
-                        'まだ旅行まとめ（思い出）がありません。\nホームの「旅行スタート」から旅を始めて、停止するとここにまとめが作られます。',
+                        'まだ思い出がありません。\n「旅行スタート」から旅を始めるとここにまとめが作られます。',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 14,
@@ -134,10 +134,7 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
                   final photos = memory.allPhotos;
                   final backgroundPhoto = photos.isNotEmpty
                       ? photos.first
-                      : AppPhoto(
-                          id: 'bg_${memory.id}',
-                          label: memory.title,
-                        );
+                      : AppPhoto(id: 'bg_${memory.id}', label: memory.title);
 
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
@@ -161,10 +158,7 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
                               gradient: LinearGradient(
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black54,
-                                ],
+                                colors: [Colors.transparent, Colors.black54],
                                 stops: [0.45, 1.0],
                               ),
                             ),

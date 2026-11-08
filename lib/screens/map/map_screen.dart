@@ -28,11 +28,11 @@ class _MapScreenState extends State<MapScreen> {
   List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
   late TeamGroup _selectedTeam = _teams.first;
 
-  final List<MemoryPin> _allPins = List<MemoryPin>.from(
+  List<MemoryPin> _allPins = List<MemoryPin>.from(
     MemoryPin.initialSamplePins,
   );
 
-  late final List<TripMemory> _allMemories =
+  late List<TripMemory> _allMemories =
       TripMemory.buildInitialSampleMemories(_allPins);
 
   /// 起動直後はピン非選択（1倍の全体表示から開始）
@@ -77,19 +77,62 @@ class _MapScreenState extends State<MapScreen> {
   void _subscribeToGroups(String uid) {
     _groupsSubscription?.cancel();
     if (_currentUser.isAnonymous) {
+      setState(() {
+        _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
+        _selectedTeam = _teams.first;
+        _allPins = List<MemoryPin>.from(MemoryPin.initialSamplePins);
+        _allMemories = TripMemory.buildInitialSampleMemories(_allPins);
+        _selectedPin = null;
+      });
       return;
     }
     _groupsSubscription = _groupService.watchUserGroups(uid).listen((
       newGroups,
     ) {
       if (!mounted || newGroups.isEmpty) return;
+      final nextSelected = newGroups.firstWhere(
+        (t) => t.id == _selectedTeam.id,
+        orElse: () => newGroups.first,
+      );
       setState(() {
         _teams = newGroups;
-        _selectedTeam = _teams.firstWhere(
-          (t) => t.id == _selectedTeam.id,
-          orElse: () => _teams.first,
-        );
+        _selectedTeam = nextSelected;
       });
+      _loadAllGroupsDataFromDb(newGroups);
+    });
+  }
+
+  Future<void> _loadAllGroupsDataFromDb(List<TeamGroup> groups) async {
+    if (_currentUser.isAnonymous) return;
+    final List<MemoryPin> loadedPins = [];
+    final List<TripMemory> loadedMemories = [];
+    for (final group in groups) {
+      final pins = await _groupService.fetchGroupPins(group.id);
+      final memories = await _groupService.fetchGroupMemories(group.id);
+      loadedPins.addAll(pins);
+      loadedMemories.addAll(memories);
+    }
+    if (!mounted) return;
+    setState(() {
+      _allPins = loadedPins;
+      _allMemories = loadedMemories;
+    });
+  }
+
+  Future<void> _loadGroupDataFromDb(String groupId) async {
+    if (_currentUser.isAnonymous) return;
+    if (_selectedTeam.isPersonal) {
+      await _loadAllGroupsDataFromDb(_teams);
+      return;
+    }
+    final pins = await _groupService.fetchGroupPins(groupId);
+    final memories = await _groupService.fetchGroupMemories(groupId);
+    if (!mounted) return;
+    setState(() {
+      _allPins.removeWhere((p) => p.teamId == groupId);
+      _allPins.addAll(pins);
+      _allMemories.removeWhere((m) => m.teamId == groupId);
+      _allMemories.addAll(memories);
     });
   }
 
@@ -101,11 +144,19 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+  /// 「MyMap」（isPersonal == true）選択時は全グループのピンを引き継いで表示する
   List<MemoryPin> get _currentTeamPins {
+    if (_selectedTeam.isPersonal) {
+      return List<MemoryPin>.from(_allPins);
+    }
     return _allPins.where((pin) => pin.teamId == _selectedTeam.id).toList();
   }
 
+  /// 「MyMap」（isPersonal == true）選択時は全グループの思い出を引き継いで表示する
   List<TripMemory> get _currentTeamMemories {
+    if (_selectedTeam.isPersonal) {
+      return List<TripMemory>.from(_allMemories);
+    }
     return _allMemories.where((m) => m.teamId == _selectedTeam.id).toList();
   }
 
@@ -223,6 +274,10 @@ class _MapScreenState extends State<MapScreen> {
       _activeTripPins.clear();
     });
 
+    if (!_currentUser.isAnonymous) {
+      _groupService.saveMemory(createdMemory);
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('旅行まとめ「$title」を作成しました！'),
@@ -242,9 +297,18 @@ class _MapScreenState extends State<MapScreen> {
           memories: _currentTeamMemories,
           initialSelectedMemory: initialMemory,
           onDeleteMemory: (memoryId) {
+            final target = _allMemories
+                .where((m) => m.id == memoryId)
+                .firstOrNull;
             setState(() {
               _allMemories.removeWhere((m) => m.id == memoryId);
             });
+            if (!_currentUser.isAnonymous) {
+              _groupService.deleteMemory(
+                target?.teamId ?? _selectedTeam.id,
+                memoryId,
+              );
+            }
           },
         ),
       ),
@@ -294,6 +358,9 @@ class _MapScreenState extends State<MapScreen> {
           _activeTripPins.add(newPin);
         }
       });
+      if (!_currentUser.isAnonymous) {
+        await _groupService.savePin(newPin);
+      }
     }
   }
 
@@ -303,7 +370,9 @@ class _MapScreenState extends State<MapScreen> {
         builder: (_) => LoginScreen(
           currentUserName: _currentUser.displayName,
           onSignInCompleted: (user) {
+            if (!mounted) return;
             setState(() => _currentUser = user);
+            _subscribeToGroups(user.uid);
           },
         ),
       ),
@@ -358,6 +427,7 @@ class _MapScreenState extends State<MapScreen> {
           _selectedTeam = joinedTeam;
           _selectedPin = null;
         });
+        _loadGroupDataFromDb(joinedTeam.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('グループ「${joinedTeam.name}」に参加しました！'),
@@ -426,6 +496,7 @@ class _MapScreenState extends State<MapScreen> {
                     _selectedTeam = team;
                     _selectedPin = null;
                   });
+                  _loadGroupDataFromDb(team.id);
                 },
                 onCreateTeam: _handleCreateTeam,
                 onJoinTeamByCode: _handleJoinTeamByCode,
