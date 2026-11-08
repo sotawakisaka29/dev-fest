@@ -16,17 +16,84 @@ import '../../core/theme/app_theme.dart';
 ///   - 写真があるレビューのみ直下に横スクロールで写真を表示（ない場合は表示なし）
 /// - 画面下部：3列グリッドで旅行全体の写真を説明文なしで一覧表示
 /// - すべての基本余白は8の倍数（8, 16, 24, 32）で構成
-class MemoryDetailScreen extends StatelessWidget {
+class MemoryDetailScreen extends StatefulWidget {
   const MemoryDetailScreen({
     super.key,
     required this.memory,
     required this.onDelete,
     this.onJumpToMapPin,
+    this.onUpdateTitle,
+    this.onEditPin,
   });
 
   final TripMemory memory;
   final VoidCallback onDelete;
   final ValueChanged<MemoryPin>? onJumpToMapPin;
+  final ValueChanged<String>? onUpdateTitle;
+  final ValueChanged<MemoryPin>? onEditPin;
+
+  @override
+  State<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
+}
+
+class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
+  late TripMemory _currentMemory;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentMemory = widget.memory;
+  }
+
+  @override
+  void didUpdateWidget(covariant MemoryDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.memory != oldWidget.memory) {
+      _currentMemory = widget.memory;
+    }
+  }
+
+  TripMemory get memory => _currentMemory;
+
+  Future<void> _showEditTitleDialog(BuildContext context) async {
+    final controller = TextEditingController(text: memory.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('旅行タイトルを編集'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: '新しい旅行タイトル',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final trimmed = controller.text.trim();
+                Navigator.of(dialogContext).pop(trimmed.isEmpty ? memory.title : trimmed);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newTitle != null && newTitle.isNotEmpty && newTitle != memory.title) {
+      setState(() {
+        _currentMemory = _currentMemory.copyWith(title: newTitle);
+      });
+      widget.onUpdateTitle?.call(newTitle);
+    }
+  }
 
   Future<void> _confirmDelete(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -54,7 +121,7 @@ class MemoryDetailScreen extends StatelessWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      onDelete();
+      widget.onDelete();
       Navigator.of(context).pop();
     }
   }
@@ -217,7 +284,17 @@ class MemoryDetailScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 8),
+                        // 鉛筆アイコン（タイトル編集）
+                        IconButton(
+                          tooltip: '旅行タイトルを編集',
+                          onPressed: () => _showEditTitleDialog(context),
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            size: 24,
+                            color: AppTheme.darkGrey,
+                          ),
+                        ),
                         // ゴミ箱アイコン（削除）
                         IconButton(
                           tooltip: 'この思い出を削除',
@@ -347,6 +424,23 @@ class MemoryDetailScreen extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
+                                  // スポット編集ボタン
+                                  if (widget.onEditPin != null)
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () => widget.onEditPin!(pin),
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(8),
+                                        child: Tooltip(
+                                          message: 'スポットを編集',
+                                          child: Icon(
+                                            Icons.edit_outlined,
+                                            size: 20,
+                                            color: AppTheme.darkGrey,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   // ↗ 登録住所の Google Maps アプリへ飛ぶボタン
                                   InkWell(
                                     borderRadius: BorderRadius.circular(8),

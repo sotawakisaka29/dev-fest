@@ -10,12 +10,18 @@ import 'photo_picker/photo_picker_section.dart';
 import 'review_input/review_input_section.dart';
 import 'time_range/time_range_section.dart';
 
-/// 記録作成画面（端末アルバム＆Google Photos Picker API並行対応）
+/// 記録作成・編集画面（端末アルバム＆Google Photos Picker API並行対応）
 class RecordScreen extends StatefulWidget {
-  const RecordScreen({super.key, required this.teamId, this.activeTripId});
+  const RecordScreen({
+    super.key,
+    required this.teamId,
+    this.activeTripId,
+    this.initialPin,
+  });
 
   final String teamId;
   final String? activeTripId;
+  final MemoryPin? initialPin;
 
   @override
   State<RecordScreen> createState() => _RecordScreenState();
@@ -26,6 +32,8 @@ class _RecordScreenState extends State<RecordScreen>
   final TextEditingController _placeController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
+
+  bool get _isEditing => widget.initialPin != null;
 
   bool _shareLocation = true;
   String _selectedAddress = '東京都江東区平野1-4-8';
@@ -47,6 +55,39 @@ class _RecordScreenState extends State<RecordScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final init = widget.initialPin;
+    if (init != null) {
+      _placeController.text = init.placeName;
+      _commentController.text = init.comment;
+      _selectedAddress = init.address;
+      _selectedPrefecture = init.prefecture;
+      _selectedLatitude = init.latitude;
+      _selectedLongitude = init.longitude;
+      _selectedNormalizedPosition = init.mapNormalizedPosition;
+      _rating = init.rating;
+      _shareLocation = init.shareLocation;
+      if (init.recordedDate != null) {
+        _selectedDate = init.recordedDate!;
+      }
+      _photos.addAll(init.photos);
+      _parseInitialTime(init.startTime, isStart: true);
+      _parseInitialTime(init.endTime, isStart: false);
+    }
+  }
+
+  void _parseInitialTime(String timeStr, {required bool isStart}) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        final h = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        if (isStart) {
+          _startTime = TimeOfDay(hour: h, minute: m);
+        } else {
+          _endTime = TimeOfDay(hour: h, minute: m);
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -249,32 +290,54 @@ class _RecordScreenState extends State<RecordScreen>
 
   void _handleSave() {
     final placeName = _placeController.text.trim().isEmpty
-        ? '新しい思い出スポット'
+        ? (_isEditing ? widget.initialPin!.placeName : '新しい思い出スポット')
         : _placeController.text.trim();
 
-    final createdPin = MemoryPin(
-      id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
-      teamId: widget.teamId,
-      placeName: placeName,
-      address: _selectedAddress,
-      prefecture: _selectedPrefecture,
-      latitude: _selectedLatitude,
-      longitude: _selectedLongitude,
-      mapNormalizedPosition: _selectedNormalizedPosition,
-      startTime: _formatTime(_startTime),
-      endTime: _formatTime(_endTime),
-      rating: _rating,
-      comment: _commentController.text.trim().isEmpty
-          ? 'とても良い時間を過ごせました。'
-          : _commentController.text.trim(),
-      photoLabels: _photos.map((p) => p.label).toList(),
-      photos: List<AppPhoto>.from(_photos),
-      recordedDate: _selectedDate,
-      tripId: widget.activeTripId,
-      shareLocation: _shareLocation,
-    );
+    final MemoryPin pinToReturn;
+    if (_isEditing) {
+      pinToReturn = widget.initialPin!.copyWith(
+        placeName: placeName,
+        address: _selectedAddress,
+        prefecture: _selectedPrefecture,
+        latitude: _selectedLatitude,
+        longitude: _selectedLongitude,
+        mapNormalizedPosition: _selectedNormalizedPosition,
+        startTime: _formatTime(_startTime),
+        endTime: _formatTime(_endTime),
+        rating: _rating,
+        comment: _commentController.text.trim().isEmpty
+            ? 'とても良い時間を過ごせました。'
+            : _commentController.text.trim(),
+        photoLabels: _photos.map((p) => p.label).toList(),
+        photos: List<AppPhoto>.from(_photos),
+        recordedDate: _selectedDate,
+        shareLocation: _shareLocation,
+      );
+    } else {
+      pinToReturn = MemoryPin(
+        id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
+        teamId: widget.teamId,
+        placeName: placeName,
+        address: _selectedAddress,
+        prefecture: _selectedPrefecture,
+        latitude: _selectedLatitude,
+        longitude: _selectedLongitude,
+        mapNormalizedPosition: _selectedNormalizedPosition,
+        startTime: _formatTime(_startTime),
+        endTime: _formatTime(_endTime),
+        rating: _rating,
+        comment: _commentController.text.trim().isEmpty
+            ? 'とても良い時間を過ごせました。'
+            : _commentController.text.trim(),
+        photoLabels: _photos.map((p) => p.label).toList(),
+        photos: List<AppPhoto>.from(_photos),
+        recordedDate: _selectedDate,
+        tripId: widget.activeTripId,
+        shareLocation: _shareLocation,
+      );
+    }
 
-    Navigator.of(context).pop(createdPin);
+    Navigator.of(context).pop(pinToReturn);
   }
 
   @override
@@ -282,9 +345,9 @@ class _RecordScreenState extends State<RecordScreen>
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: const Text(
-          '記録',
-          style: TextStyle(
+        title: Text(
+          _isEditing ? '記録を編集' : '記録',
+          style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
             color: AppTheme.darkGrey,
@@ -297,7 +360,7 @@ class _RecordScreenState extends State<RecordScreen>
             icon: const Icon(Icons.arrow_back, color: AppTheme.darkGrey),
           ),
           IconButton(
-            tooltip: '保存する',
+            tooltip: _isEditing ? '変更を保存' : '保存する',
             onPressed: _handleSave,
             icon: const Icon(Icons.check, color: AppTheme.darkGrey),
           ),

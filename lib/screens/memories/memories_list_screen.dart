@@ -16,19 +16,23 @@ class MemoriesListScreen extends StatefulWidget {
     required this.memories,
     required this.onDeleteMemory,
     this.initialSelectedMemory,
+    this.onUpdateTripTitle,
+    this.onEditPin,
   });
 
   final String teamName;
   final List<TripMemory> memories;
   final ValueChanged<String> onDeleteMemory;
   final TripMemory? initialSelectedMemory;
+  final void Function(String tripId, String newTitle)? onUpdateTripTitle;
+  final ValueChanged<MemoryPin>? onEditPin;
 
   @override
   State<MemoriesListScreen> createState() => _MemoriesListScreenState();
 }
 
 class _MemoriesListScreenState extends State<MemoriesListScreen> {
-  late final List<TripMemory> _items = List<TripMemory>.from(widget.memories);
+  late List<TripMemory> _items = List<TripMemory>.from(widget.memories);
 
   @override
   void initState() {
@@ -39,6 +43,16 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
         if (mounted) {
           _openDetail(initial);
         }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MemoriesListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.memories != oldWidget.memories) {
+      setState(() {
+        _items = List<TripMemory>.from(widget.memories);
       });
     }
   }
@@ -59,6 +73,16 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
           onJumpToMapPin: (pin) {
             Navigator.of(detailContext).pop(pin);
           },
+          onUpdateTitle: (newTitle) {
+            setState(() {
+              final idx = _items.indexWhere((m) => m.id == memory.id);
+              if (idx >= 0) {
+                _items[idx] = _items[idx].copyWith(title: newTitle);
+              }
+            });
+            widget.onUpdateTripTitle?.call(memory.id, newTitle);
+          },
+          onEditPin: widget.onEditPin,
         ),
       ),
     );

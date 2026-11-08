@@ -22,6 +22,26 @@ class TripMemory {
   final List<MemoryPin> pins;
   final double? customDistanceKm;
 
+  TripMemory copyWith({
+    String? id,
+    String? teamId,
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<MemoryPin>? pins,
+    double? customDistanceKm,
+  }) {
+    return TripMemory(
+      id: id ?? this.id,
+      teamId: teamId ?? this.teamId,
+      title: title ?? this.title,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      pins: pins ?? this.pins,
+      customDistanceKm: customDistanceKm ?? this.customDistanceKm,
+    );
+  }
+
   /// 「0月0日 〜 0月0日」形式の期間テキスト
   String get formattedDateRange {
     return '${startDate.month}月${startDate.day}日 〜 ${endDate.month}月${endDate.day}日';
