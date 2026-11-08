@@ -167,7 +167,15 @@ class _RecordScreenState extends State<RecordScreen>
 
     try {
       final result = await GooglePhotosService.instance
-          .pickPhotosFromGooglePhotos();
+          .pickPhotosFromGooglePhotos(
+            onProgress: (message) {
+              if (mounted) {
+                setState(() {
+                  _loadingMessage = message;
+                });
+              }
+            },
+          );
 
       if (!mounted) return;
 
