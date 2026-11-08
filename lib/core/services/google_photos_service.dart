@@ -438,8 +438,8 @@ class GooglePhotosService {
 
   /// Picker選択フローを一括実行するヘルパーメソッド
   Future<GooglePhotosPickerResult> pickPhotosFromGooglePhotos() async {
-    // 1. Googleアカウントログイン状態の確認
-    final googleUser = AuthService.instance.currentGoogleUser;
+    // 1. Googleアカウントログイン状態の確認（サイレントサインイン復元を含む）
+    final googleUser = await AuthService.instance.ensureGoogleUser();
     if (googleUser == null) {
       return const GooglePhotosPickerResult.failure(
         errorType: GooglePhotosErrorType.notSignedIn,

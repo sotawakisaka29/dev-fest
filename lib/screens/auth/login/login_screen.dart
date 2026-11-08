@@ -10,10 +10,18 @@ class LoginScreen extends StatefulWidget {
     super.key,
     required this.currentUserName,
     required this.onSignInCompleted,
+    this.isInitialGate = false,
+    this.onGuestSelected,
   });
 
   final String currentUserName;
   final ValueChanged<AppUser> onSignInCompleted;
+
+  /// 初回起動時のログインゲート画面として表示するかどうか
+  final bool isInitialGate;
+
+  /// 初回ログイン画面で「ゲストとして参加」が押されたときのコールバック
+  final VoidCallback? onGuestSelected;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -76,163 +84,229 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _handleContinueAsGuest() {
+    final guestUser = _authService.enterGuestMode();
+    setState(() => _user = guestUser);
+    widget.onSignInCompleted(guestUser);
+    widget.onGuestSelected?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isConnected = _authService.isFirebaseInitialized;
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'アカウント・認証',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
-        ),
-      ),
+      appBar: widget.isInitialGate
+          ? null
+          : AppBar(
+              title: const Text(
+                'アカウント・認証',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+              ),
+            ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // アカウント情報カード
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceGrey,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.lightGrey),
+              if (widget.isInitialGate) ...[
+                const Spacer(),
+                const Text(
+                  'ログイン',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.darkGrey,
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 26,
-                      backgroundColor: AppTheme.darkGrey,
-                      backgroundImage: _user.photoUrl != null
-                          ? NetworkImage(_user.photoUrl!)
-                          : null,
-                      child: _user.photoUrl == null
-                          ? const Icon(
-                              Icons.person_outline,
-                              color: AppTheme.pureWhite,
-                              size: 28,
-                            )
-                          : null,
+                const SizedBox(height: 20),
+                const Icon(
+                  Icons.map_outlined,
+                  size: 56,
+                  color: AppTheme.darkGrey,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Memory Map',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.darkGrey,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'ログインすると自分だけの思い出マップを作ります。\nゲストではサンプルを体験できます。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.primaryGrey,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 36),
+                FilledButton.icon(
+                  onPressed: _isLoading ? null : _handleGoogleSignIn,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.darkGrey,
+                    foregroundColor: AppTheme.pureWhite,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '現在のログインユーザー',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.mediumGrey,
-                            ),
+                  ),
+                  icon: _isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppTheme.pureWhite,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _user.displayName,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.darkGrey,
-                            ),
-                          ),
-                          if (_user.email.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              _user.email,
-                              style: const TextStyle(
+                        )
+                      : const Icon(Icons.login, size: 20),
+                  label: const Text(
+                    'Googleアカウントでログイン',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _handleContinueAsGuest,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.person_outline, size: 20),
+                  label: const Text(
+                    'ゲストとして参加',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ] else ...[
+                // アカウント情報カード
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceGrey,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.lightGrey),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: AppTheme.darkGrey,
+                        backgroundImage: _user.photoUrl != null
+                            ? NetworkImage(_user.photoUrl!)
+                            : null,
+                        child: _user.photoUrl == null
+                            ? const Icon(
+                                Icons.person_outline,
+                                color: AppTheme.pureWhite,
+                                size: 28,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '現在のログインユーザー',
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: AppTheme.primaryGrey,
+                                color: AppTheme.mediumGrey,
                               ),
                             ),
-                          ],
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: isConnected
-                                      ? Colors.green
-                                      : Colors.amber,
-                                ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _user.displayName,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.darkGrey,
                               ),
-                              const SizedBox(width: 6),
+                            ),
+                            if (_user.email.isNotEmpty) ...[
+                              const SizedBox(height: 2),
                               Text(
-                                isConnected ? 'Firebase 接続中' : 'ローカル/テストモード',
+                                _user.email,
                                 style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppTheme.mediumGrey,
+                                  fontSize: 12,
+                                  color: AppTheme.primaryGrey,
                                 ),
                               ),
                             ],
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+                const Text(
+                  '認証プロバイダ連携',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primaryGrey,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_user.isAnonymous)
+                  // ログイン前：Googleアカウントでログインボタン
+                  FilledButton.icon(
+                    onPressed: _isLoading ? null : _handleGoogleSignIn,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.darkGrey,
+                      foregroundColor: AppTheme.pureWhite,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 28),
-              const Text(
-                '認証プロバイダ連携',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.primaryGrey,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Googleアカウントでログイン
-              FilledButton.icon(
-                onPressed: _isLoading ? null : _handleGoogleSignIn,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppTheme.darkGrey,
-                  foregroundColor: AppTheme.pureWhite,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    icon: _isLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.pureWhite,
+                            ),
+                          )
+                        : const Icon(Icons.login, size: 20),
+                    label: const Text(
+                      'Googleアカウントでログイン',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else
+                  // ログイン後：ログアウトボタン
+                  OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _handleSignOut,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text('ログアウト / ゲストに戻る'),
                   ),
-                ),
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppTheme.pureWhite,
-                        ),
-                      )
-                    : const Icon(Icons.login, size: 20),
-                label: const Text(
-                  'Googleアカウントでログイン',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // ログアウトボタン
-              OutlinedButton.icon(
-                onPressed: _isLoading ? null : _handleSignOut,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: const Icon(Icons.logout, size: 18),
-                label: const Text('ログアウト / ゲストに戻る'),
-              ),
+              ],
 
               const Spacer(),
               const Center(
                 child: Text(
-                  '個人データは作成者のみアクセス可能・グループ単位で安全に共有されます',
+                  '個人データはグループ単位で安全に共有されます',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 11, color: AppTheme.mediumGrey),
                 ),

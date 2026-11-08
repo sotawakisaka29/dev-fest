@@ -33,6 +33,10 @@ service cloud.firestore {
       match /pins/{pinId} {
         allow read, write: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
       }
+
+      match /memories/{memoryId} {
+        allow read, write: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
+      }
     }
 
     // デフォルトはすべてのアクセスを遮断

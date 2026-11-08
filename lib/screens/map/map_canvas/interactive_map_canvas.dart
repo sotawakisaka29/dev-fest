@@ -257,9 +257,7 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
     final controller = _mapController;
     if (controller == null) return;
     try {
-      await controller.animateCamera(
-        CameraUpdate.newCameraPosition(homePos),
-      );
+      await controller.animateCamera(CameraUpdate.newCameraPosition(homePos));
     } catch (_) {}
   }
 

@@ -12,6 +12,15 @@ class InviteButton extends StatelessWidget {
   final TeamGroup selectedTeam;
 
   void _showInviteSheet(BuildContext context) {
+    if (selectedTeam.isPersonal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('「MyMap」は個人用のため招待できません'),
+        ),
+      );
+      return;
+    }
+
     final inviteCode = selectedTeam.inviteCode.isNotEmpty
         ? selectedTeam.inviteCode
         : 'INVITE88';
@@ -135,27 +144,32 @@ class InviteButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDisabled = selectedTeam.isPersonal;
+    final foregroundColor = isDisabled
+        ? AppTheme.mediumGrey
+        : AppTheme.darkGrey;
+
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () => _showInviteSheet(context),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.mail_outline,
               size: 29,
-              color: AppTheme.darkGrey,
+              color: foregroundColor,
               shadows: _labelShadows,
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
               '招待する',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.darkGrey,
+                color: foregroundColor,
                 shadows: _labelShadows,
               ),
             ),
