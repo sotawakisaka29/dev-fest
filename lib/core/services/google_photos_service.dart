@@ -375,6 +375,45 @@ class GooglePhotosService {
     );
   }
 
+  /// GoogleフォトのbaseUrlから画像をBearer認証付きでダウンロードし、一時ファイルとして保存する
+  Future<String?> downloadPhotoToTempFile({
+    required String baseUrl,
+    required String accessToken,
+    required String id,
+  }) async {
+    final client = HttpClient();
+    try {
+      final downloadUrl =
+          baseUrl.contains('=') ? baseUrl : '$baseUrl=w800-h800';
+      final uri = Uri.parse(downloadUrl);
+      final request = await client.getUrl(uri);
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $accessToken',
+      );
+
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        debugPrint(
+          'Failed to download Google Photo: HTTP ${response.statusCode}',
+        );
+        return null;
+      }
+
+      final bytes = await consolidateHttpClientResponseBytes(response);
+      final tempDir = Directory.systemTemp;
+      final sanitizedId = id.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+      final file = File('${tempDir.path}/gphoto_$sanitizedId.jpg');
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } catch (e) {
+      debugPrint('Error downloading photo to temp file: $e');
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   /// HTTPステータスコードに応じたエラーハンドリング（機密情報は含めない）
   void _handleApiError(int statusCode, String responseBody) {
     debugPrint('GooglePhotosService HTTP Error: $statusCode');
@@ -437,7 +476,9 @@ class GooglePhotosService {
   }
 
   /// Picker選択フローを一括実行するヘルパーメソッド
-  Future<GooglePhotosPickerResult> pickPhotosFromGooglePhotos() async {
+  Future<GooglePhotosPickerResult> pickPhotosFromGooglePhotos({
+    void Function(String message)? onProgress,
+  }) async {
     // 1. Googleアカウントログイン状態の確認
     final googleUser = AuthService.instance.currentGoogleUser;
     if (googleUser == null) {
@@ -448,6 +489,7 @@ class GooglePhotosService {
     }
 
     // 2. 段階的認可（Incremental Auth）でPickerスコープを要求
+    onProgress?.call('Googleフォトのアクセス権限を確認中...');
     final scopeResult = await AuthService.instance
         .requestPhotoPickerScopeDetailed();
     if (scopeResult != ScopeRequestResult.granted) {
@@ -481,6 +523,7 @@ class GooglePhotosService {
     // 4. セッション作成
     PickerSession? session;
     try {
+      onProgress?.call('Googleフォト選択画面を準備中...');
       session = await createSession(accessToken: accessToken);
 
       // 5. 外部ブラウザ / Googleフォトアプリで pickerUri を開く
@@ -493,6 +536,7 @@ class GooglePhotosService {
       }
 
       // 6. ポーリングで写真選択完了を待機
+      onProgress?.call('Googleフォトで写真を選択してください...');
       final readySession = await pollUntilReady(
         sessionId: session.id,
         accessToken: accessToken,
@@ -506,6 +550,7 @@ class GooglePhotosService {
       }
 
       // 7. 選択されたメディアアイテムの一覧を取得
+      onProgress?.call('写真一覧を取得中...');
       final items = await fetchMediaItems(
         sessionId: readySession.id,
         accessToken: accessToken,
@@ -518,7 +563,30 @@ class GooglePhotosService {
         );
       }
 
-      return GooglePhotosPickerResult.success(items);
+      // 8. Google Photos Picker APIのbaseUrlはOAuth認証ヘッダーが必須かつ一時的（最大60分）なため、
+      // 端末キャッシュへダウンロードして確実・即座にプレビュー表示できるようにする
+      onProgress?.call('写真データをダウンロード中...');
+      final downloadedPhotos = <AppPhoto>[];
+      for (int i = 0; i < items.length; i++) {
+        final photo = items[i];
+        if (items.length > 1) {
+          onProgress?.call('写真をダウンロード中 (${i + 1}/${items.length})...');
+        }
+        if (photo.url != null && photo.url!.isNotEmpty) {
+          final localPath = await downloadPhotoToTempFile(
+            baseUrl: photo.url!,
+            accessToken: accessToken,
+            id: photo.id,
+          );
+          if (localPath != null) {
+            downloadedPhotos.add(photo.copyWith(localPath: localPath));
+            continue;
+          }
+        }
+        downloadedPhotos.add(photo);
+      }
+
+      return GooglePhotosPickerResult.success(downloadedPhotos);
     } on GooglePhotosCustomException catch (e) {
       return GooglePhotosPickerResult.failure(
         errorType: e.type,

@@ -51,6 +51,7 @@ void main() {
           id: 'photo_1',
           label: 'DSC_0001.JPG',
           url: 'https://lh3.googleusercontent.com/test=w600-h600',
+          localPath: '/tmp/gphoto_photo_1.jpg',
           isFromGooglePhotos: true,
         ),
       ];
@@ -60,6 +61,8 @@ void main() {
       expect(result.isSuccess, true);
       expect(result.photos.length, 1);
       expect(result.photos.first.label, 'DSC_0001.JPG');
+      expect(result.photos.first.localPath, '/tmp/gphoto_photo_1.jpg');
+      expect(result.photos.first.isFromGooglePhotos, true);
       expect(result.errorType, isNull);
     });
 
