@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_map_app/core/models/app_photo.dart';
 import 'package:my_map_app/core/models/memory_pin.dart';

@@ -30,11 +30,11 @@ class _MapScreenState extends State<MapScreen> {
   List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
   late TeamGroup _selectedTeam = _teams.first;
 
-  List<MemoryPin> _allPins = List<MemoryPin>.from(
+  final List<MemoryPin> _allPins = List<MemoryPin>.from(
     MemoryPin.initialSamplePins,
   );
 
-  late List<TripMemory> _allMemories =
+  late final List<TripMemory> _allMemories =
       TripMemory.buildInitialSampleMemories(_allPins);
 
   /// 起動直後はピン非選択（1倍の全体表示から開始）
@@ -119,7 +119,9 @@ class _MapScreenState extends State<MapScreen> {
         _allPins.addAll(pins);
         // 選択中ピンが更新された場合も追従
         if (_selectedPin != null && _selectedPin!.teamId == groupId) {
-          final updated = pins.where((p) => p.id == _selectedPin!.id).firstOrNull;
+          final updated = pins
+              .where((p) => p.id == _selectedPin!.id)
+              .firstOrNull;
           if (updated != null) {
             _selectedPin = updated;
           }
@@ -144,7 +146,6 @@ class _MapScreenState extends State<MapScreen> {
     _pinsSubscription?.cancel();
     _tripsSubscription?.cancel();
     super.dispose();
-  }
   }
 
   /// 「MyMap」（isPersonal == true）選択時は全グループのピンを引き継いで表示する
@@ -219,9 +220,7 @@ class _MapScreenState extends State<MapScreen> {
             FilledButton(
               onPressed: () {
                 final text = controller.text.trim();
-                Navigator.of(
-                  dialogContext,
-                ).pop(text.isEmpty ? '新しい旅行' : text);
+                Navigator.of(dialogContext).pop(text.isEmpty ? '新しい旅行' : text);
               },
               child: const Text('スタート'),
             ),
@@ -241,9 +240,7 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('「$tripTitle」を開始しました！スポットを記録しましょう。'),
-      ),
+      SnackBar(content: Text('「$tripTitle」を開始しました！スポットを記録しましょう。')),
     );
   }
 
@@ -282,10 +279,7 @@ class _MapScreenState extends State<MapScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('旅行まとめ「$title」を作成しました！'),
-        action: SnackBarAction(
-          label: '思い出を見る',
-          onPressed: _openMemoriesScreen,
-        ),
+        action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
       ),
     );
   }
@@ -352,10 +346,7 @@ class _MapScreenState extends State<MapScreen> {
   /// 地図上の都道府県・市区町村写真プレビューをタップしたとき：対応する思い出（または思い出一覧）へ飛ぶ
   void _handleTapRegionPins(List<MemoryPin> regionPins) {
     final pinIds = regionPins.map((p) => p.id).toSet();
-    final tripIds = regionPins
-        .map((p) => p.tripId)
-        .whereType<String>()
-        .toSet();
+    final tripIds = regionPins.map((p) => p.tripId).whereType<String>().toSet();
 
     TripMemory? matchedMemory;
     for (final memory in _currentTeamMemories) {
@@ -372,10 +363,8 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _openRecordScreen() async {
     final newPin = await Navigator.of(context).push<MemoryPin>(
       MaterialPageRoute(
-        builder: (_) => RecordScreen(
-          teamId: _selectedTeam.id,
-          activeTripId: _activeTripId,
-        ),
+        builder: (_) =>
+            RecordScreen(teamId: _selectedTeam.id, activeTripId: _activeTripId),
       ),
     );
     if (newPin != null && mounted) {
@@ -418,6 +407,7 @@ class _MapScreenState extends State<MapScreen> {
           _selectedTeam = newTeam;
           _selectedPin = null;
         });
+        _subscribeToTripsAndPins(newTeam.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -452,7 +442,7 @@ class _MapScreenState extends State<MapScreen> {
           _selectedTeam = joinedTeam;
           _selectedPin = null;
         });
-        _loadGroupDataFromDb(joinedTeam.id);
+        _subscribeToTripsAndPins(joinedTeam.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('グループ「${joinedTeam.name}」に参加しました！'),
