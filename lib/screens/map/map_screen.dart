@@ -28,12 +28,11 @@ class _MapScreenState extends State<MapScreen> {
   List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
   late TeamGroup _selectedTeam = _teams.first;
 
-  List<MemoryPin> _allPins = List<MemoryPin>.from(
-    MemoryPin.initialSamplePins,
-  );
+  List<MemoryPin> _allPins = List<MemoryPin>.from(MemoryPin.initialSamplePins);
 
-  late List<TripMemory> _allMemories =
-      TripMemory.buildInitialSampleMemories(_allPins);
+  late List<TripMemory> _allMemories = TripMemory.buildInitialSampleMemories(
+    _allPins,
+  );
 
   /// 起動直後はピン非選択（1倍の全体表示から開始）
   MemoryPin? _selectedPin;
@@ -216,9 +215,7 @@ class _MapScreenState extends State<MapScreen> {
             FilledButton(
               onPressed: () {
                 final text = controller.text.trim();
-                Navigator.of(
-                  dialogContext,
-                ).pop(text.isEmpty ? '新しい旅行' : text);
+                Navigator.of(dialogContext).pop(text.isEmpty ? '新しい旅行' : text);
               },
               child: const Text('スタート'),
             ),
@@ -238,13 +235,11 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('「$tripTitle」を開始しました！スポットを記録しましょう。'),
-      ),
+      SnackBar(content: Text('「$tripTitle」を開始しました！スポットを記録しましょう。')),
     );
   }
 
-  /// 旅行停止ボタンを押したとき：つけたタイトルで旅行まとめ（TripMemory）を作成
+  /// 旅行終了ボタンを押したとき：つけたタイトルで旅行まとめ（TripMemory）を作成
   void _handleStopTrip() {
     if (!_isTripActive) return;
 
@@ -281,10 +276,7 @@ class _MapScreenState extends State<MapScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('旅行まとめ「$title」を作成しました！'),
-        action: SnackBarAction(
-          label: '思い出を見る',
-          onPressed: _openMemoriesScreen,
-        ),
+        action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
       ),
     );
   }
@@ -325,10 +317,7 @@ class _MapScreenState extends State<MapScreen> {
   /// 地図上の都道府県・市区町村写真プレビューをタップしたとき：対応する思い出（または思い出一覧）へ飛ぶ
   void _handleTapRegionPins(List<MemoryPin> regionPins) {
     final pinIds = regionPins.map((p) => p.id).toSet();
-    final tripIds = regionPins
-        .map((p) => p.tripId)
-        .whereType<String>()
-        .toSet();
+    final tripIds = regionPins.map((p) => p.tripId).whereType<String>().toSet();
 
     TripMemory? matchedMemory;
     for (final memory in _currentTeamMemories) {
@@ -345,10 +334,8 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _openRecordScreen() async {
     final newPin = await Navigator.of(context).push<MemoryPin>(
       MaterialPageRoute(
-        builder: (_) => RecordScreen(
-          teamId: _selectedTeam.id,
-          activeTripId: _activeTripId,
-        ),
+        builder: (_) =>
+            RecordScreen(teamId: _selectedTeam.id, activeTripId: _activeTripId),
       ),
     );
     if (newPin != null && mounted) {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 
-/// 旅行スタート（旅行名入力）⇔ 旅行中は「記録する」＋「旅行停止（まとめ作成）」を行うボタン
+/// 旅行スタート（旅行名入力）⇔ 旅行中は「記録する」＋「旅行終了（まとめ作成）」を行うボタン
 class TripActionButton extends StatelessWidget {
   const TripActionButton({
     super.key,
@@ -78,7 +78,7 @@ class TripActionButton extends StatelessWidget {
                 ),
                 const SizedBox(width: 3),
                 Text(
-                  isTripActive ? '旅行停止' : 'すぐ記録',
+                  isTripActive ? '旅行終了' : 'すぐ記録',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,

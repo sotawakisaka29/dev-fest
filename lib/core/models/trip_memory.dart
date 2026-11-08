@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'app_photo.dart';
 import 'memory_pin.dart';
 
-/// 旅行スタート〜旅行停止で作成される「旅行まとめ（思い出）」モデル
+/// 旅行スタート〜旅行終了で作成される「旅行まとめ（思い出）」モデル
 class TripMemory {
   const TripMemory({
     required this.id,
@@ -112,7 +112,7 @@ class TripMemory {
   factory TripMemory.fromFirestore(String id, Map<String, dynamic> data) {
     final rawPins = data['pins'] as List<dynamic>? ?? const [];
     final parsedPins = rawPins.whereType<Map<String, dynamic>>().map((m) {
-      final pinId = m['id'] as String? ?? 'pin_${ m.hashCode }';
+      final pinId = m['id'] as String? ?? 'pin_${m.hashCode}';
       return MemoryPin.fromFirestore(pinId, m);
     }).toList();
 
@@ -202,4 +202,3 @@ class TripMemory {
     ];
   }
 }
-

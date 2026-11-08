@@ -60,14 +60,12 @@ void main() {
     await tester.tap(find.text('スタート'));
     await tester.pumpAndSettle();
 
-
-    // 旅行中は「記録する」と「旅行停止」が表示されること
+    // 旅行中は「記録する」と「旅行終了」が表示されること
     expect(find.text('記録する'), findsOneWidget);
-    expect(find.text('旅行停止'), findsOneWidget);
+    expect(find.text('旅行終了'), findsOneWidget);
 
-
-    // 4. 「旅行停止」をタップすると、つけたタイトル「週末の箱根旅」で旅行まとめが作られること
-    await tester.tap(find.text('旅行停止'));
+    // 4. 「旅行終了」をタップすると、つけたタイトル「週末の箱根旅」で旅行まとめが作られること
+    await tester.tap(find.text('旅行終了'));
     await tester.pumpAndSettle();
     expect(find.text('旅行スタート'), findsOneWidget);
 
@@ -95,9 +93,7 @@ void main() {
     final rating5Y = tester
         .getTopLeft(find.textContaining('清澄白河 ロースタリーカフェ'))
         .dy;
-    final rating4Y = tester
-        .getTopLeft(find.textContaining('七里ヶ浜 海沿いテラス'))
-        .dy;
+    final rating4Y = tester.getTopLeft(find.textContaining('七里ヶ浜 海沿いテラス')).dy;
     final rating0Y = tester
         .getTopLeft(find.textContaining('移動中継地点（海ほたるPA）'))
         .dy;
