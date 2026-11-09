@@ -18,7 +18,7 @@ class MemoryPin {
     required this.mapNormalizedPosition,
     required this.startTime,
     required this.endTime,
-    required this.rating,
+    this.rating,
     required this.comment,
     required this.photoLabels,
     this.photos = const [],
@@ -47,8 +47,8 @@ class MemoryPin {
   final String startTime;
   final String endTime;
 
-  /// 1〜5の星評価（通過点のみの場合は0）
-  final int rating;
+  /// 1〜5の星評価（未評価・評価なし・通過点の場合はnull）
+  final int? rating;
   final String comment;
   final List<String> photoLabels;
 
@@ -68,20 +68,41 @@ class MemoryPin {
 
   /// 住所文字列から市区町村名（例: 江東区、鎌倉市、京都市、札幌市、箱根町）を抽出する
   String get city {
-    var rest = address;
-    if (prefecture.isNotEmpty && rest.startsWith(prefecture)) {
-      rest = rest.substring(prefecture.length);
-    }
-    final match = RegExp(r'^([^0-9０-９\-ー]+?[市区町村])').firstMatch(rest);
-    if (match != null) {
-      final raw = match.group(1)!;
-      // 「足柄下郡箱根町」のように郡が含まれる場合は町・村名を優先表示
-      final gunSplit = raw.split('郡');
-      if (gunSplit.length > 1 && gunSplit.last.isNotEmpty) {
-        return gunSplit.last;
+    var rest = address.trim();
+    // Google Maps等の「日本、〒123-4567 」プレフィックスを除去
+    rest = rest.replaceFirst(
+      RegExp(r'^(?:日本[、,\s]*)?(?:〒?\s*\d{3}[-ー]\d{4}\s*)?'),
+      '',
+    );
+    if (prefecture.isNotEmpty) {
+      final prefIndex = rest.indexOf(prefecture);
+      if (prefIndex >= 0) {
+        rest = rest.substring(prefIndex + prefecture.length).trim();
       }
-      return raw;
     }
+
+    // 1. 「足柄下郡箱根町」のように郡（大和郡山市・小郡市・蒲郡市・郡山市を除く）が含まれる場合は町・村名を抽出
+    final gunMatch = RegExp(
+      r'^(?!(?:大和郡山|小郡|蒲郡|郡山)市)([^0-9０-９\-ー\s市区町村]+?郡)\s*([^0-9０-９\-ー\s]+?[町村])',
+    ).firstMatch(rest);
+    if (gunMatch != null) {
+      return gunMatch.group(2)!;
+    }
+
+    // 2. 市名（政令指定都市の「京都市右京区」→「京都市」、および「市川市」「四日市市」「廿日市市」「町田市」「東村山市」等に対応）
+    final shiMatch = RegExp(
+      r'^((?:市川|市原|四日市|廿日市|八日市場|十日町|野々市|大町|町田|東村山|武蔵村山|羽村|村上|大村|[^0-9０-９\-ー\s市区]+?)市)',
+    ).firstMatch(rest);
+    if (shiMatch != null) {
+      return shiMatch.group(1)!;
+    }
+
+    // 3. 特別区（東京都23区など）や郡省略の町村名
+    final kuChosonMatch = RegExp(r'^([^0-9０-９\-ー\s]+?[区町村])').firstMatch(rest);
+    if (kuChosonMatch != null) {
+      return kuChosonMatch.group(1)!;
+    }
+
     return prefecture;
   }
 
@@ -200,7 +221,7 @@ class MemoryPin {
       ),
       startTime: data['startTime'] as String? ?? '10:00',
       endTime: data['endTime'] as String? ?? '11:00',
-      rating: (data['rating'] as num?)?.toInt() ?? 0,
+      rating: (data['rating'] as num?)?.toInt(),
       comment: data['comment'] as String? ?? '',
       photoLabels: labels,
       photos: parsedPhotos,

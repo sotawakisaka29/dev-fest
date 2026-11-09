@@ -43,6 +43,10 @@
 	<array>
 		<string>comgooglemaps</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>旅行中の移動ルートや訪問スポットの位置を記録するために現在地を使用します。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>旅行中の移動ルートを記録するために位置情報を使用します。</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

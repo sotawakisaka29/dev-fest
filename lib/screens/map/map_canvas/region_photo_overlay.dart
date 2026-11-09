@@ -36,7 +36,11 @@ class RegionPhotoOverlay extends StatelessWidget {
     CameraPosition camera,
     Size screenSize,
   ) {
-    final double worldSize = 256.0 * math.pow(2.0, camera.zoom);
+    if (screenSize.width <= 0 || screenSize.height <= 0) {
+      return Offset.zero;
+    }
+    final zoom = camera.zoom.isFinite ? camera.zoom : 1.0;
+    final double worldSize = 256.0 * math.pow(2.0, zoom);
     final Offset centerWorld = _projectToWorld(camera.target, worldSize);
     final Offset pointWorld = _projectToWorld(point, worldSize);
 
@@ -82,6 +86,7 @@ class RegionPhotoOverlay extends StatelessWidget {
         byPrefecture.keys.toSet(),
       ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return const SizedBox.shrink();
         final boundaries = snapshot.data;
         if (boundaries == null) return const SizedBox.shrink();
         return Stack(
@@ -110,30 +115,48 @@ class RegionPhotoOverlay extends StatelessWidget {
           pin.photos.isEmpty) {
         continue;
       }
-      final key = '${pin.prefecture}_${pin.city}';
+      final cityLabel = pin.city != pin.prefecture
+          ? pin.city
+          : '${(pin.latitude * 100).round()}_${(pin.longitude * 100).round()}';
+      final key = '${pin.prefecture}_$cityLabel';
       byCity.putIfAbsent(key, () => []).add(pin);
     }
 
-    final cityPrefectures = {
-      for (final cityPins in byCity.values)
-        cityPins.first.city: cityPins.first.prefecture,
+    final Map<String, String> cityPrefectures = {
+      for (final entry in byCity.entries)
+        if (entry.value.isNotEmpty) entry.key: entry.value.first.prefecture,
+    };
+    final Map<
+      String,
+      ({String city, String address, double latitude, double longitude})
+    >
+    pinFallbacks = {
+      for (final entry in byCity.entries)
+        if (entry.value.isNotEmpty)
+          entry.key: (
+            city: entry.value.first.city,
+            address: entry.value.first.address,
+            latitude: entry.value.first.latitude,
+            longitude: entry.value.first.longitude,
+          ),
     };
     return FutureBuilder<RegionPolygons>(
-      future: RegionBoundaryRepository.loadMunicipalities(cityPrefectures),
+      future: RegionBoundaryRepository.loadMunicipalities(
+        cityPrefectures,
+        pinFallbacks: pinFallbacks,
+      ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return const SizedBox.shrink();
         final boundaries = snapshot.data;
         if (boundaries == null) return const SizedBox.shrink();
         return Stack(
           clipBehavior: Clip.none,
           children: byCity.entries
-              .where(
-                (entry) =>
-                    boundaries[entry.value.first.city]?.isNotEmpty ?? false,
-              )
+              .where((entry) => boundaries[entry.key]?.isNotEmpty ?? false)
               .map(
                 (entry) => _buildProjectedPolygonWidget(
                   regionKey: 'city_${entry.key}',
-                  latLngPolygons: boundaries[entry.value.first.city]!,
+                  latLngPolygons: boundaries[entry.key]!,
                   regionPins: entry.value,
                 ),
               )
@@ -158,6 +181,16 @@ class RegionPhotoOverlay extends StatelessWidget {
         .toList(growable: false);
     final screenPoints = screenPolygons.expand((polygon) => polygon).toList();
 
+    if (screenPoints.isEmpty) {
+      return const Positioned(
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        child: SizedBox.shrink(),
+      );
+    }
+
     double minX = screenPoints.first.dx;
     double maxX = screenPoints.first.dx;
     double minY = screenPoints.first.dy;
@@ -172,8 +205,8 @@ class RegionPhotoOverlay extends StatelessWidget {
 
     final double rawWidth = (maxX - minX).clamp(1.0, 4000.0);
     final double rawHeight = (maxY - minY).clamp(1.0, 4000.0);
-    final double width = rawWidth;
-    final double height = rawHeight;
+    final double width = rawWidth.isFinite ? rawWidth : 1.0;
+    final double height = rawHeight.isFinite ? rawHeight : 1.0;
     final double centerX = (minX + maxX) / 2.0;
     final double centerY = (minY + maxY) / 2.0;
 
@@ -277,15 +310,15 @@ class _GeoPolygonPhotoSlideshowState extends State<_GeoPolygonPhotoSlideshow> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap,
-      child: CustomPaint(
-        foregroundPainter: _ExactPolygonBorderPainter(
-          polygons: widget.localPolygons,
-        ),
-        child: ClipPath(
-          clipper: _ExactPolygonClipper(polygons: widget.localPolygons),
+    return CustomPaint(
+      foregroundPainter: _ExactPolygonBorderPainter(
+        polygons: widget.localPolygons,
+      ),
+      child: ClipPath(
+        clipper: _ExactPolygonClipper(polygons: widget.localPolygons),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 550),
             child: SizedBox.expand(

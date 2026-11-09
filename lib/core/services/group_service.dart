@@ -301,6 +301,74 @@ class GroupService {
     }
   }
 
+  /// ピンを部屋のDBから削除する
+  Future<void> deletePin(String groupId, String pinId) async {
+    _localGroupPins[groupId]?.removeWhere((p) => p.id == pinId);
+
+    final db = _firestore;
+    if (db == null) return;
+
+    try {
+      await db
+          .collection('groups')
+          .doc(groupId)
+          .collection('pins')
+          .doc(pinId)
+          .delete();
+    } catch (e) {
+      debugPrint('Firestore deletePin error: $e');
+    }
+  }
+
+  /// グループ（部屋）を削除する（個人用のMyMapは削除不可）
+  Future<void> deleteGroup(String groupId) async {
+    final index = _localFallbackGroups.indexWhere((g) => g.id == groupId);
+    if (index != -1 && !_localFallbackGroups[index].isPersonal) {
+      _localFallbackGroups.removeAt(index);
+      _localGroupPins.remove(groupId);
+      _localGroupMemories.remove(groupId);
+      _fallbackStreamController.add(List.unmodifiable(_localFallbackGroups));
+    }
+
+    final db = _firestore;
+    if (db == null) return;
+
+    try {
+      await db.collection('groups').doc(groupId).delete();
+    } catch (e) {
+      debugPrint('Firestore deleteGroup error: $e');
+    }
+  }
+
+  /// グループから退出する（個人用のMyMapは退出不可）
+  Future<void> leaveGroup({
+    required String groupId,
+    required String userUid,
+  }) async {
+    final index = _localFallbackGroups.indexWhere((g) => g.id == groupId);
+    if (index != -1 && !_localFallbackGroups[index].isPersonal) {
+      final target = _localFallbackGroups[index];
+      final newMembers = target.memberUids.where((u) => u != userUid).toList();
+      final updated = target.copyWith(
+        memberCount: (target.memberCount - 1).clamp(0, 9999),
+        memberUids: newMembers,
+      );
+      _localFallbackGroups[index] = updated;
+      _fallbackStreamController.add(List.unmodifiable(_localFallbackGroups));
+    }
+
+    final db = _firestore;
+    if (db == null) return;
+
+    try {
+      await db.collection('groups').doc(groupId).update({
+        'memberUids': FieldValue.arrayRemove([userUid]),
+      });
+    } catch (e) {
+      debugPrint('Firestore leaveGroup error: $e');
+    }
+  }
+
   /// 指定したグループ（部屋）の旅行思い出一覧をDBから取得する
   Future<List<TripMemory>> fetchGroupMemories(String groupId) async {
     final db = _firestore;

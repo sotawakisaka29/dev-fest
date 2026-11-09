@@ -4,6 +4,7 @@ import '../../core/models/app_photo.dart';
 import '../../core/models/memory_pin.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/google_photos_service.dart';
+import '../../core/services/place_autocomplete_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/theme/app_theme.dart';
 import 'location_input/location_input_section.dart';
@@ -37,16 +38,17 @@ class _RecordScreenState extends State<RecordScreen>
   bool get _isEditing => widget.initialPin != null;
 
   bool _shareLocation = true;
-  String _selectedAddress = '東京都江東区平野1-4-8';
-  String _selectedPrefecture = '東京都';
-  double _selectedLatitude = 35.6777;
-  double _selectedLongitude = 139.8027;
-  Offset _selectedNormalizedPosition = const Offset(0.67, 0.55);
+  PlaceCandidate? _selectedCandidate;
+  String _selectedAddress = '';
+  String _selectedPrefecture = '';
+  double _selectedLatitude = 35.6812;
+  double _selectedLongitude = 139.7671;
+  Offset _selectedNormalizedPosition = const Offset(0.66, 0.56);
 
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _startTime = const TimeOfDay(hour: 12, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 13, minute: 30);
-  int _rating = 4;
+  int? _rating;
 
   final List<AppPhoto> _photos = [];
   bool _isLoadingPhotos = false;
@@ -299,6 +301,47 @@ class _RecordScreenState extends State<RecordScreen>
     return '$h:$m';
   }
 
+  void _handleSave() {
+    final rawText = _placeController.text.trim();
+    final placeName = !_shareLocation
+        ? '非公開スポット'
+        : (rawText.isEmpty ? '新しい思い出スポット' : rawText);
+
+    // 予測候補が選択されている場合はその候補の住所・都道府県・座標を使用し、
+    // 未選択のまま自由入力された場合は入力文字列から都道府県・住所リンク・座標を解決する
+    final resolved =
+        _selectedCandidate ??
+        PlaceAutocompleteService.instance.resolveFromFreeText(placeName);
+
+    final createdPin = MemoryPin(
+      id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
+      teamId: widget.teamId,
+      placeName: placeName,
+      address: !_shareLocation
+          ? ''
+          : (_selectedAddress.isNotEmpty ? _selectedAddress : resolved.address),
+      prefecture: _selectedPrefecture.isNotEmpty
+          ? _selectedPrefecture
+          : resolved.prefecture,
+      latitude: _selectedCandidate != null
+          ? _selectedLatitude
+          : resolved.latitude,
+      longitude: _selectedCandidate != null
+          ? _selectedLongitude
+          : resolved.longitude,
+      mapNormalizedPosition: _selectedCandidate != null
+          ? _selectedNormalizedPosition
+          : resolved.normalizedPosition,
+      startTime: _formatTime(_startTime),
+      endTime: _formatTime(_endTime),
+      rating: !_shareLocation ? null : _rating,
+      comment: _commentController.text.trim(),
+      photoLabels: _photos.map((p) => p.label).toList(),
+      photos: List<AppPhoto>.from(_photos),
+      recordedDate: _selectedDate,
+      tripId: widget.activeTripId,
+      shareLocation: _shareLocation,
+    );
   Future<void> _handleSave() async {
     if (_isUploading) return;
 
@@ -408,6 +451,97 @@ class _RecordScreenState extends State<RecordScreen>
           const SizedBox(width: 8),
         ],
       ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LocationInputSection(
+                shareLocation: _shareLocation,
+                placeController: _placeController,
+                selectedAddress: _selectedAddress,
+                selectedPrefecture: _selectedPrefecture,
+                selectedLatitude: _selectedLatitude,
+                selectedLongitude: _selectedLongitude,
+                onShareLocationChanged: (value) {
+                  setState(() => _shareLocation = value);
+                },
+                onPlaceTextChanged: (text) {
+                  final resolved = PlaceAutocompleteService.instance
+                      .resolveFromFreeText(text);
+                  setState(() {
+                    _selectedCandidate = null;
+                    if (text.trim().isEmpty) {
+                      _selectedAddress = '';
+                      _selectedPrefecture = '';
+                    } else {
+                      _selectedAddress = resolved.address;
+                      _selectedPrefecture = resolved.prefecture;
+                      _selectedLatitude = resolved.latitude;
+                      _selectedLongitude = resolved.longitude;
+                      _selectedNormalizedPosition = resolved.normalizedPosition;
+                    }
+                  });
+                },
+                onCandidateSelected: (candidate) {
+                  setState(() {
+                    _selectedCandidate = candidate;
+                    _placeController.text = candidate.name;
+                    _selectedAddress = candidate.address;
+                    _selectedPrefecture = candidate.prefecture;
+                    _selectedLatitude = candidate.latitude;
+                    _selectedLongitude = candidate.longitude;
+                    _selectedNormalizedPosition = candidate.normalizedPosition;
+                  });
+                },
+              ),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 16),
+              // 日時帯の選択セクション（訪問記録メタデータとして維持）
+              TimeRangeSection(
+                selectedDate: _selectedDate,
+                startTime: _startTime,
+                endTime: _endTime,
+                isLoadingPhotos: false,
+                onDateChanged: (date) {
+                  setState(() => _selectedDate = date);
+                },
+                onStartTimeChanged: (time) {
+                  setState(() => _startTime = time);
+                },
+                onEndTimeChanged: (time) {
+                  setState(() => _endTime = time);
+                },
+              ),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 12),
+              // 「しない」選択時は星評価のみ非表示にし、口コミ入力欄は常に表示する
+              ReviewInputSection(
+                rating: _rating,
+                showRating: _shareLocation,
+                commentController: _commentController,
+                onRatingChanged: (value) => setState(() => _rating = value),
+              ),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 16),
+              // 写真セクション（端末アルバム選択 ＆ Google Photos Picker API並行対応）
+              PhotoPickerSection(
+                photos: _photos,
+                isLoading: _isLoadingPhotos,
+                loadingMessage: _loadingMessage,
+                onAddFromGallery: _handlePickFromGallery,
+                onPickFromGooglePhotos: _handlePickFromGooglePhotos,
+                onRemovePhotoAt: (index) {
+                  setState(() {
+                    _photos.removeAt(index);
+                  });
+                },
+              ),
+            ],
       body: Stack(
         children: [
           SafeArea(

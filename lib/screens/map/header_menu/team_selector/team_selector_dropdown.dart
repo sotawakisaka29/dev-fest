@@ -13,6 +13,9 @@ class TeamSelectorDropdown extends StatelessWidget {
     required this.onTeamSelected,
     required this.onCreateTeam,
     required this.onJoinTeamByCode,
+    this.onDeleteTeam,
+    this.onLeaveTeam,
+    this.currentUid = '',
   });
 
   final List<TeamGroup> teams;
@@ -20,6 +23,77 @@ class TeamSelectorDropdown extends StatelessWidget {
   final ValueChanged<TeamGroup> onTeamSelected;
   final ValueChanged<String> onCreateTeam;
   final ValueChanged<String> onJoinTeamByCode;
+  final ValueChanged<TeamGroup>? onDeleteTeam;
+  final ValueChanged<TeamGroup>? onLeaveTeam;
+  final String currentUid;
+
+  Future<void> _confirmDeleteTeam(
+    BuildContext context,
+    TeamGroup targetTeam,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('グループを削除'),
+          content: Text(
+            'グループ「${targetTeam.name}」を削除してもよろしいですか？\nグループ内のデータも削除されます。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: AppTheme.pureWhite,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('削除する'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      onDeleteTeam?.call(targetTeam);
+    }
+  }
+
+  Future<void> _confirmLeaveTeam(
+    BuildContext context,
+    TeamGroup targetTeam,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('グループから退出'),
+          content: Text('グループ「${targetTeam.name}」から退出してもよろしいですか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: AppTheme.pureWhite,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('退出する'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      onLeaveTeam?.call(targetTeam);
+    }
+  }
 
   Future<void> _showCreateTeamDialog(BuildContext context) async {
     final controller = TextEditingController();
@@ -88,7 +162,7 @@ class TeamSelectorDropdown extends StatelessWidget {
                       fontSize: 18,
                     ),
                     decoration: InputDecoration(
-                      hintText: '例：K7M9P2X4',
+                      hintText: 'K7M9P2X4',
                       errorText: errorMessage,
                       counterText: '',
                       border: const OutlineInputBorder(),
@@ -168,6 +242,14 @@ class TeamSelectorDropdown extends StatelessWidget {
             }
             if (value == '__join_by_code__') {
               _showJoinTeamDialog(context);
+              return;
+            }
+            if (value == '__delete_current__') {
+              _confirmDeleteTeam(context, selectedTeam);
+              return;
+            }
+            if (value == '__leave_current__') {
+              _confirmLeaveTeam(context, selectedTeam);
               return;
             }
             final matched = teams.firstWhere(
@@ -263,6 +345,54 @@ class TeamSelectorDropdown extends StatelessWidget {
                 ],
               ),
             ),
+            if (!selectedTeam.isPersonal) ...[
+              const PopupMenuDivider(),
+              if (selectedTeam.ownerUid == currentUid ||
+                  selectedTeam.ownerUid.isEmpty)
+                PopupMenuItem<String>(
+                  value: '__delete_current__',
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: Colors.redAccent,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '「${selectedTeam.name}」を削除',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                PopupMenuItem<String>(
+                  value: '__leave_current__',
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.logout,
+                        size: 18,
+                        color: Colors.redAccent,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '「${selectedTeam.name}」から退出',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ],
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),

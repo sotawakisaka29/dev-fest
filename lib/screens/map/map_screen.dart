@@ -5,6 +5,7 @@ import '../../core/models/team_group.dart';
 import '../../core/models/trip_memory.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/group_service.dart';
+import '../../core/services/location_tracking_service.dart';
 import '../../core/services/trip_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/login/login_screen.dart';
@@ -25,6 +26,8 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final AuthService _authService = AuthService.instance;
   final GroupService _groupService = GroupService.instance;
+  final LocationTrackingService _locationService =
+      LocationTrackingService.instance;
   final TripService _tripService = TripService.instance;
 
   List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
@@ -50,6 +53,7 @@ class _MapScreenState extends State<MapScreen> {
   String? _activeTripTitle;
   DateTime? _activeTripStartDate;
   final List<MemoryPin> _activeTripPins = [];
+  List<RoutePoint> _activeTripRoutePoints = [];
 
   late AppUser _currentUser;
   Timer? _idleRestoreTimer;
@@ -140,6 +144,7 @@ class _MapScreenState extends State<MapScreen> {
     _idleRestoreTimer?.cancel();
     _groupsSubscription?.cancel();
     _authSubscription?.cancel();
+    _locationService.stopTracking();
     _pinsSubscription?.cancel();
     _tripsSubscription?.cancel();
     super.dispose();
@@ -196,10 +201,7 @@ class _MapScreenState extends State<MapScreen> {
               TextField(
                 controller: controller,
                 autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: '旅行名（タイトル）',
-                  hintText: '例：鎌倉日帰り旅、北海道グルメ旅行',
-                ),
+                decoration: const InputDecoration(labelText: '旅行名（タイトル）'),
                 onSubmitted: (value) {
                   final trimmed = value.trim();
                   Navigator.of(
@@ -228,21 +230,37 @@ class _MapScreenState extends State<MapScreen> {
 
     if (tripTitle == null || !mounted) return;
 
+    final startTime = DateTime.now();
+
     setState(() {
       _isTripActive = true;
-      _activeTripId = 'trip_${DateTime.now().millisecondsSinceEpoch}';
+      _activeTripId = 'trip_${startTime.millisecondsSinceEpoch}';
       _activeTripTitle = tripTitle;
-      _activeTripStartDate = DateTime.now();
+      _activeTripStartDate = startTime;
       _activeTripPins.clear();
+      _activeTripRoutePoints = [];
     });
 
+    // 旅行スタート時の日時と現在位置を取得し、移動に応じたルート追跡を開始
+    await _locationService.startTracking(
+      startTime: startTime,
+      onRouteUpdated: (points) {
+        if (!mounted || !_isTripActive) return;
+        setState(() {
+          _activeTripRoutePoints = List<RoutePoint>.from(points);
+        });
+      },
+    );
+
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$tripTitle」を開始しました！スポットを記録しましょう。')),
+      SnackBar(content: Text('「$tripTitle」を開始し、現在位置からの移動ルート記録をスタートしました！')),
     );
   }
 
-  /// 旅行停止ボタンを押したとき：つけたタイトルで旅行まとめ（TripMemory）を作成
-  void _handleStopTrip() {
+  /// 旅行終了ボタンを押したとき：ルートの記録をストップし、つけたタイトルで旅行まとめ（TripMemory）を作成
+  Future<void> _handleStopTrip() async {
     if (!_isTripActive) return;
 
     final title = _activeTripTitle ?? '新しい旅行';
@@ -251,7 +269,16 @@ class _MapScreenState extends State<MapScreen> {
     final startDate = _activeTripStartDate ?? DateTime.now();
     final endDate = DateTime.now();
 
+    final recordedRoute = await _locationService.stopTracking();
     final recordedPins = List<MemoryPin>.from(_activeTripPins);
+
+    // 通った道のルート（GPS移動履歴）のみを取得する（ピンの場所へ線を追従させない）
+    final mergedRoute = _locationService.buildRouteForTimeWindow(
+      startDateTime: startDate,
+      endDateTime: endDate,
+      importedTimelinePoints: recordedRoute,
+    );
+    final finalRoute = mergedRoute.isNotEmpty ? mergedRoute : recordedRoute;
 
     final createdMemory = TripMemory(
       id: tripId,
@@ -260,7 +287,10 @@ class _MapScreenState extends State<MapScreen> {
       startDate: startDate,
       endDate: endDate,
       pins: recordedPins,
+      routePoints: finalRoute,
     );
+
+    if (!mounted) return;
 
     setState(() {
       _allMemories.insert(0, createdMemory);
@@ -269,12 +299,15 @@ class _MapScreenState extends State<MapScreen> {
       _activeTripTitle = null;
       _activeTripStartDate = null;
       _activeTripPins.clear();
+      _activeTripRoutePoints = [];
     });
 
     _tripService.saveTrip(createdMemory);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        content: Text(
+          'ルート記録を停止し、旅行まとめ「$title」（${createdMemory.formattedDistance}）を作成しました！',
         content: Text('旅行まとめ「$title」を作成しました！'),
         action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
       ),
@@ -297,6 +330,7 @@ class _MapScreenState extends State<MapScreen> {
           activeTripId: pin.tripId,
           initialPin: pin,
         ),
+        action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
       ),
     );
     if (updatedPin != null && mounted) {
@@ -366,8 +400,20 @@ class _MapScreenState extends State<MapScreen> {
       MaterialPageRoute(
         builder: (_) => MemoriesListScreen(
           teamName: _selectedTeam.name,
+          teamId: _selectedTeam.id,
           memories: _currentTeamMemories,
+          availablePins: _currentTeamPins,
           initialSelectedMemory: initialMemory,
+          onDeleteSinglePin: _handleDeletePin,
+          onCreateMemory: (createdMemory) {
+            setState(() {
+              _allMemories.insert(0, createdMemory);
+            });
+            if (!_currentUser.isAnonymous) {
+              _groupService.saveMemory(createdMemory);
+            }
+          },
+          onDeleteMemory: (memoryId, pinIdsToDelete) async {
           onUpdateTripTitle: _handleUpdateTripTitle,
           onEditPin: _handleEditPin,
           onAddPin: _handleAddPinToTrip,
@@ -377,7 +423,29 @@ class _MapScreenState extends State<MapScreen> {
                 .firstOrNull;
             setState(() {
               _allMemories.removeWhere((m) => m.id == memoryId);
+              if (pinIdsToDelete.isNotEmpty) {
+                _allPins.removeWhere((p) => pinIdsToDelete.contains(p.id));
+                _activeTripPins.removeWhere(
+                  (p) => pinIdsToDelete.contains(p.id),
+                );
+                if (_selectedPin != null &&
+                    pinIdsToDelete.contains(_selectedPin!.id)) {
+                  _selectedPin = null;
+                }
+              }
             });
+            if (!_currentUser.isAnonymous) {
+              await _groupService.deleteMemory(
+                target?.teamId ?? _selectedTeam.id,
+                memoryId,
+              );
+              for (final pinId in pinIdsToDelete) {
+                await _groupService.deletePin(
+                  target?.teamId ?? _selectedTeam.id,
+                  pinId,
+                );
+              }
+            }
             _tripService.deleteTrip(
               target?.teamId ?? _selectedTeam.id,
               memoryId,
@@ -420,6 +488,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
     if (newPin != null && mounted) {
+      // レビュー（ピン）の追加と通った道のルート保存は別件のため、ルート線をピン位置へ追従させない
       setState(() {
         _allPins.add(newPin);
         if (_isTripActive) {
@@ -514,6 +583,70 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _handleDeletePin(MemoryPin pin) async {
+    setState(() {
+      _allPins.removeWhere((p) => p.id == pin.id);
+      _activeTripPins.removeWhere((p) => p.id == pin.id);
+      if (_selectedPin?.id == pin.id) {
+        _selectedPin = null;
+      }
+      if (_externalFocusPin?.id == pin.id) {
+        _externalFocusPin = null;
+      }
+      _allMemories = _allMemories.map((m) {
+        final updatedPins = m.pins.where((p) => p.id != pin.id).toList();
+        return m.copyWith(pins: updatedPins);
+      }).toList();
+    });
+
+    if (!_currentUser.isAnonymous) {
+      await _groupService.deletePin(pin.teamId, pin.id);
+    }
+  }
+
+  Future<void> _handleDeleteTeam(TeamGroup team) async {
+    setState(() {
+      _teams.removeWhere((t) => t.id == team.id);
+      _selectedTeam = _teams.firstWhere(
+        (t) => t.isPersonal,
+        orElse: () => _teams.first,
+      );
+      _selectedPin = null;
+    });
+    _loadGroupDataFromDb(_selectedTeam.id);
+    if (!_currentUser.isAnonymous) {
+      await _groupService.deleteGroup(team.id);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('グループ「${team.name}」を削除しました')));
+    }
+  }
+
+  Future<void> _handleLeaveTeam(TeamGroup team) async {
+    setState(() {
+      _teams.removeWhere((t) => t.id == team.id);
+      _selectedTeam = _teams.firstWhere(
+        (t) => t.isPersonal,
+        orElse: () => _teams.first,
+      );
+      _selectedPin = null;
+    });
+    _loadGroupDataFromDb(_selectedTeam.id);
+    if (!_currentUser.isAnonymous) {
+      await _groupService.leaveGroup(
+        groupId: team.id,
+        userUid: _currentUser.uid,
+      );
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('グループ「${team.name}」から退出しました')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final teamPins = _currentTeamPins;
@@ -525,6 +658,9 @@ class _MapScreenState extends State<MapScreen> {
           Positioned.fill(
             child: InteractiveMapCanvas(
               pins: teamPins,
+              memories: _currentTeamMemories,
+              activeRoutePoints: _activeTripRoutePoints,
+              isTripActive: _isTripActive,
               selectedPin: _selectedPin,
               showRouteLine: true,
               externalFocusPin: _externalFocusPin,
@@ -538,6 +674,7 @@ class _MapScreenState extends State<MapScreen> {
                 PinDetailSheet.show(
                   context,
                   pin,
+                  onDeletePin: _handleDeletePin,
                   onEdit: (p) => _handleEditPin(p),
                 );
               },
@@ -551,12 +688,12 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // 2. 左上ヘッダーメニュー（1倍の時のみ表示・白いカード背景なし）
+          // 2. 左上ヘッダーメニュー（1倍の時のみ表示・縦横スクロール中やホームボタン押下時も1倍なら消えない）
           SafeArea(
             child: Align(
               alignment: Alignment.topLeft,
               child: HeaderMenuOverlay(
-                visible: _isAt1xZoom && !_isMapInteracting,
+                visible: _isAt1xZoom,
                 teams: _teams,
                 selectedTeam: _selectedTeam,
                 isTripActive: _isTripActive,
@@ -576,6 +713,9 @@ class _MapScreenState extends State<MapScreen> {
                 onOpenMemories: _openMemoriesScreen,
                 onOpenRecord: _openRecordScreen,
                 onOpenAuth: _openAuthScreen,
+                onDeleteTeam: _handleDeleteTeam,
+                onLeaveTeam: _handleLeaveTeam,
+                currentUid: _currentUser.uid,
               ),
             ),
           ),

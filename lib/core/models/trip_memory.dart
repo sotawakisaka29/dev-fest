@@ -1,8 +1,42 @@
 import 'dart:math' as math;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_photo.dart';
 import 'memory_pin.dart';
 
-/// 旅行スタート〜旅行停止で作成される「旅行まとめ（思い出）」モデル
+/// 移動ルートの1地点（緯度・経度・通過日時）を表すモデル
+class RoutePoint {
+  const RoutePoint({
+    required this.latitude,
+    required this.longitude,
+    required this.timestamp,
+  });
+
+  final double latitude;
+  final double longitude;
+  final DateTime timestamp;
+
+  LatLng get latLng => LatLng(latitude, longitude);
+
+  Map<String, dynamic> toMap() {
+    return {
+      'lat': latitude,
+      'lng': longitude,
+      'timestamp': timestamp.toIso8601String(),
+    };
+  }
+
+  factory RoutePoint.fromMap(Map<String, dynamic> map) {
+    return RoutePoint(
+      latitude: (map['lat'] as num?)?.toDouble() ?? 35.6812,
+      longitude: (map['lng'] as num?)?.toDouble() ?? 139.7671,
+      timestamp: map['timestamp'] is String
+          ? (DateTime.tryParse(map['timestamp'] as String) ?? DateTime.now())
+          : DateTime.now(),
+    );
+  }
+}
+
+/// 旅行スタート〜旅行終了、または手動の期間指定で作成される「旅行まとめ（思い出）」モデル
 class TripMemory {
   const TripMemory({
     required this.id,
@@ -11,6 +45,7 @@ class TripMemory {
     required this.startDate,
     required this.endDate,
     required this.pins,
+    this.routePoints = const [],
     this.customDistanceKm,
   });
 
@@ -20,6 +55,9 @@ class TripMemory {
   final DateTime startDate;
   final DateTime endDate;
   final List<MemoryPin> pins;
+
+  /// 旅行中またはGoogleタイムライン等から取得・記録された実際の移動ルート座標列
+  final List<RoutePoint> routePoints;
   final double? customDistanceKm;
 
   TripMemory copyWith({
@@ -47,18 +85,28 @@ class TripMemory {
     return '${startDate.month}月${startDate.day}日 〜 ${endDate.month}月${endDate.day}日';
   }
 
-  /// ピン間の緯度・経度から総移動距離（km）を算出する（Haversine公式）
+  /// 地図上に描画するためのルート座標列（通った道のルート保存のみを使用し、ピンには追従しない）
+  List<LatLng> get effectiveRouteLatLngs {
+    if (routePoints.length >= 2) {
+      return routePoints.map((p) => p.latLng).toList();
+    }
+    return const [];
+  }
+
+  /// 通った道の実ルート座標列（routePoints）の緯度・経度から総移動距離（km）を算出する（Haversine公式）
   double get totalDistanceKm {
     if (customDistanceKm != null) return customDistanceKm!;
-    if (pins.length < 2) return 0.0;
+
+    final points = effectiveRouteLatLngs;
+    if (points.length < 2) return 0.0;
 
     double sumKm = 0.0;
-    for (int i = 0; i < pins.length - 1; i++) {
-      sumKm += _haversineKm(
-        pins[i].latitude,
-        pins[i].longitude,
-        pins[i + 1].latitude,
-        pins[i + 1].longitude,
+    for (int i = 0; i < points.length - 1; i++) {
+      sumKm += haversineKm(
+        points[i].latitude,
+        points[i].longitude,
+        points[i + 1].latitude,
+        points[i + 1].longitude,
       );
     }
     return sumKm;
@@ -68,6 +116,28 @@ class TripMemory {
     final km = totalDistanceKm;
     if (km == 0) return '0km';
     return '${km.toStringAsFixed(1)}km';
+  }
+
+  TripMemory copyWith({
+    String? id,
+    String? teamId,
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<MemoryPin>? pins,
+    List<RoutePoint>? routePoints,
+    double? customDistanceKm,
+  }) {
+    return TripMemory(
+      id: id ?? this.id,
+      teamId: teamId ?? this.teamId,
+      title: title ?? this.title,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      pins: pins ?? this.pins,
+      routePoints: routePoints ?? this.routePoints,
+      customDistanceKm: customDistanceKm ?? this.customDistanceKm,
+    );
   }
 
   /// この旅行に含まれるすべての写真データ（下部縦スクロール一覧用）
@@ -97,7 +167,7 @@ class TripMemory {
     });
   }
 
-  static double _haversineKm(
+  static double haversineKm(
     double lat1,
     double lon1,
     double lat2,
@@ -116,6 +186,20 @@ class TripMemory {
     return earthRadiusKm * c;
   }
 
+  static double calculateRouteDistanceKm(List<RoutePoint> route) {
+    if (route.length < 2) return 0.0;
+    double sumKm = 0.0;
+    for (int i = 0; i < route.length - 1; i++) {
+      sumKm += haversineKm(
+        route[i].latitude,
+        route[i].longitude,
+        route[i + 1].latitude,
+        route[i + 1].longitude,
+      );
+    }
+    return sumKm;
+  }
+
   static double _degToRad(double deg) => deg * (math.pi / 180.0);
 
   Map<String, dynamic> toFirestore() {
@@ -125,6 +209,7 @@ class TripMemory {
       'startDate': startDate.toIso8601String(),
       'endDate': endDate.toIso8601String(),
       'customDistanceKm': customDistanceKm,
+      'routePoints': routePoints.map((rp) => rp.toMap()).toList(),
       'pins': pins.map((p) => {'id': p.id, ...p.toFirestore()}).toList(),
     };
   }
@@ -140,6 +225,12 @@ class TripMemory {
       return null;
     }).whereType<MemoryPin>().toList();
 
+    final rawRoutePoints = data['routePoints'] as List<dynamic>? ?? const [];
+    final parsedRoutePoints = rawRoutePoints
+        .whereType<Map<String, dynamic>>()
+        .map(RoutePoint.fromMap)
+        .toList();
+
     return TripMemory(
       id: id,
       teamId: data['teamId'] as String? ?? '',
@@ -151,6 +242,7 @@ class TripMemory {
           ? (DateTime.tryParse(data['endDate'] as String) ?? DateTime.now())
           : DateTime.now(),
       pins: parsedPins,
+      routePoints: parsedRoutePoints,
       customDistanceKm: (data['customDistanceKm'] as num?)?.toDouble(),
     );
   }
