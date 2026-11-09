@@ -508,6 +508,13 @@ class GooglePhotosService {
   }) async {
     // 1. Googleアカウントログイン状態の確認（サイレントサインイン復元を含む）
     final googleUser = await AuthService.instance.ensureGoogleUser();
+
+    if (googleUser == null) {
+      return const GooglePhotosPickerResult.failure(
+        errorType: GooglePhotosErrorType.notSignedIn,
+        message: 'Googleアカウントにログインしていません。設定またはログイン画面からサインインしてください。',
+      );
+    }
     if (googleUser == null) {
       return const GooglePhotosPickerResult.failure(
         errorType: GooglePhotosErrorType.notSignedIn,
