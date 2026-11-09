@@ -715,6 +715,29 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
           ),
+
+          // 3. 地図下端の出典表示（国土交通省 国土数値情報 / CC BY遵守・常時表示）
+          //    Googleロゴの真下（上下逆・間に余白なし）に背景なしの極小テキストで配置
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: IgnorePointer(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 10, bottom: 0),
+                  child: const Text(
+                    '出典：国土交通省 国土数値情報（行政区域データ）',
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      height: 1.0,
+                      color: AppTheme.darkGrey,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

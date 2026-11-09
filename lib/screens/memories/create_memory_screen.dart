@@ -411,34 +411,34 @@ class _CreateMemoryScreenState extends State<CreateMemoryScreen> {
                         const SizedBox(height: 12),
                         const _StepGuideRow(
                           stepNumber: '1',
-                          title: 'スマホで「Google マップ」アプリを開きます',
-                          description: '普段使っているGoogleマップのアプリを起動してください。',
+                          title: 'Google マップを開きます',
+                          description: 'タイムラインを取得しているアカウントで開いてください。',
                         ),
                         const SizedBox(height: 10),
                         const _StepGuideRow(
                           stepNumber: '2',
-                          title: '画面右上の「自分のアイコン（丸い写真）」をタップします',
-                          description: '検索バーの右端にあるあなたのプロフィール画像を押します。',
+                          title: '自分のアカウントアイコンをタップします',
+                          description: '',
                         ),
                         const SizedBox(height: 10),
                         const _StepGuideRow(
                           stepNumber: '3',
                           title: 'メニューの中の「タイムライン」をタップします',
-                          description: 'あなたが歩いた・移動した道の記録画面が開きます。',
+                          description: 'あなたが歩いた・移動したルートの記録が開きます。',
                         ),
                         const SizedBox(height: 10),
                         const _StepGuideRow(
                           stepNumber: '4',
                           title: '右上の「…（3つの点）」→「位置情報とプライバシーの設定」を押します',
                           description:
-                              '画面を少し下にスクロールすると出てくる「タイムライン データをエクスポート（書き出し）」をタップして保存します。',
+                              '画面を少し下にスクロールすると出てくる「タイムライン データをエクスポート」をタップして保存します。',
                         ),
                         const SizedBox(height: 10),
                         const _StepGuideRow(
                           stepNumber: '5',
                           title: '保存されたファイルを開き、中身をすべてコピーして下の欄に貼り付けます',
                           description:
-                              'スマホの「ファイル」アプリで書き出したファイルを開き、「すべて選択」→「コピー」して、すぐ下の入力欄を長押しして「貼り付け」してください。',
+                              'スマホの「ファイル」アプリで書き出したファイルを開き、「すべて選択」→「コピー」して、すぐ下の入力欄に貼り付けてください。',
                         ),
                       ],
                     ],
@@ -452,7 +452,7 @@ class _CreateMemoryScreenState extends State<CreateMemoryScreen> {
                 maxLines: 4,
                 style: const TextStyle(fontSize: 12),
                 decoration: const InputDecoration(
-                  labelText: 'ここにコピーしたデータを貼り付けて下さい',
+                  labelText: 'ここにコピーしたデータを貼り付け',
                   alignLabelWithHint: true,
                   border: OutlineInputBorder(),
                 ),
