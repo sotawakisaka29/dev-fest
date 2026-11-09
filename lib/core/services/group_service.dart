@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/memory_pin.dart';
 import '../models/team_group.dart';
 import '../models/trip_memory.dart';
+import 'trip_service.dart';
 
 /// グループ（部屋）管理・招待コード参加・部屋データ（ピン・思い出）のDB保持を処理するサービス
 class GroupService {
@@ -286,38 +287,14 @@ class GroupService {
     localList.removeWhere((p) => p.id == pin.id);
     localList.add(pin);
 
-    final db = _firestore;
-    if (db == null) return;
-
-    try {
-      await db
-          .collection('groups')
-          .doc(pin.teamId)
-          .collection('pins')
-          .doc(pin.id)
-          .set(pin.toFirestore());
-    } catch (e) {
-      debugPrint('Firestore savePin error: $e');
-    }
+    await TripService.instance.savePin(pin);
   }
 
   /// ピンを部屋のDBから削除する
   Future<void> deletePin(String groupId, String pinId) async {
     _localGroupPins[groupId]?.removeWhere((p) => p.id == pinId);
 
-    final db = _firestore;
-    if (db == null) return;
-
-    try {
-      await db
-          .collection('groups')
-          .doc(groupId)
-          .collection('pins')
-          .doc(pinId)
-          .delete();
-    } catch (e) {
-      debugPrint('Firestore deletePin error: $e');
-    }
+    await TripService.instance.deletePin(groupId, pinId);
   }
 
   /// グループ（部屋）を削除する（個人用のMyMapは削除不可）
@@ -369,7 +346,7 @@ class GroupService {
     }
   }
 
-  /// 指定したグループ（部屋）の旅行思い出一覧をDBから取得する
+  /// 指定したグループ（部屋）の旅行思い出一覧をDBから取得する（trips と旧 memories の両方を統合）
   Future<List<TripMemory>> fetchGroupMemories(String groupId) async {
     final db = _firestore;
     if (db == null) {
@@ -377,21 +354,31 @@ class GroupService {
     }
 
     try {
-      final snapshot = await db
+      final Map<String, TripMemory> merged = {};
+      final memoriesSnap = await db
           .collection('groups')
           .doc(groupId)
           .collection('memories')
           .get();
-      return snapshot.docs
-          .map((doc) => TripMemory.fromFirestore(doc.id, doc.data()))
-          .toList();
+      for (final doc in memoriesSnap.docs) {
+        merged[doc.id] = TripMemory.fromFirestore(doc.id, doc.data());
+      }
+      final tripsSnap = await db
+          .collection('groups')
+          .doc(groupId)
+          .collection('trips')
+          .get();
+      for (final doc in tripsSnap.docs) {
+        merged[doc.id] = TripMemory.fromFirestore(doc.id, doc.data());
+      }
+      return merged.values.toList();
     } catch (e) {
       debugPrint('Firestore fetchGroupMemories error: $e');
       return List<TripMemory>.from(_localGroupMemories[groupId] ?? const []);
     }
   }
 
-  /// 旅行思い出を部屋のDBに保存する
+  /// 旅行思い出を部屋のDBに保存する（TripService.saveTrip に統一）
   Future<void> saveMemory(TripMemory memory) async {
     final localList = _localGroupMemories.putIfAbsent(
       memory.teamId,
@@ -400,37 +387,13 @@ class GroupService {
     localList.removeWhere((m) => m.id == memory.id);
     localList.insert(0, memory);
 
-    final db = _firestore;
-    if (db == null) return;
-
-    try {
-      await db
-          .collection('groups')
-          .doc(memory.teamId)
-          .collection('memories')
-          .doc(memory.id)
-          .set(memory.toFirestore());
-    } catch (e) {
-      debugPrint('Firestore saveMemory error: $e');
-    }
+    await TripService.instance.saveTrip(memory);
   }
 
-  /// 旅行思い出を部屋のDBから削除する
+  /// 旅行思い出を部屋のDBから削除する（TripService.deleteTrip に統一）
   Future<void> deleteMemory(String groupId, String memoryId) async {
     _localGroupMemories[groupId]?.removeWhere((m) => m.id == memoryId);
 
-    final db = _firestore;
-    if (db == null) return;
-
-    try {
-      await db
-          .collection('groups')
-          .doc(groupId)
-          .collection('memories')
-          .doc(memoryId)
-          .delete();
-    } catch (e) {
-      debugPrint('Firestore deleteMemory error: $e');
-    }
+    await TripService.instance.deleteTrip(groupId, memoryId);
   }
 }

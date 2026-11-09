@@ -183,7 +183,11 @@ class MemoryPin {
     };
   }
 
-  factory MemoryPin.fromFirestore(String id, Map<String, dynamic> data) {
+  factory MemoryPin.fromFirestore(
+    String id,
+    Map<String, dynamic> data, {
+    String? fallbackTeamId,
+  }) {
     final labels =
         (data['photoLabels'] as List<dynamic>?)
             ?.map((e) => e.toString())
@@ -211,9 +215,15 @@ class MemoryPin {
         .whereType<AppPhoto>()
         .toList();
 
+    final rawTeamId = (data['teamId'] as String?)?.trim() ?? '';
+    final effectiveTeamId =
+        (fallbackTeamId != null && fallbackTeamId.isNotEmpty)
+        ? fallbackTeamId
+        : rawTeamId;
+
     return MemoryPin(
       id: id,
-      teamId: data['teamId'] as String? ?? '',
+      teamId: effectiveTeamId,
       placeName: data['placeName'] as String? ?? '名称未設定',
       address: data['address'] as String? ?? '',
       prefecture: data['prefecture'] as String? ?? '東京都',

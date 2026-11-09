@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/models/app_photo.dart';
 import '../../core/models/memory_pin.dart';
 import '../../core/models/trip_memory.dart';
 import '../../core/services/external_map_launcher.dart';
+import '../../core/services/share_service.dart';
+import '../../core/services/trip_service.dart';
 import '../../core/theme/app_theme.dart';
 
 /// 添付スケッチ画像準拠の「各思い出（旅行まとめ）詳細画面」
@@ -46,11 +50,41 @@ class MemoryDetailScreen extends StatefulWidget {
 
 class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
   late TripMemory _currentMemory;
+  StreamSubscription<List<TripMemory>>? _tripSubscription;
 
   @override
   void initState() {
     super.initState();
     _currentMemory = widget.memory;
+    _subscribeToMemoryUpdates();
+  }
+
+  void _subscribeToMemoryUpdates() {
+    _tripSubscription?.cancel();
+    if (_currentMemory.teamId.isEmpty) return;
+
+    TripService.instance.refreshGroupData(_currentMemory.teamId);
+
+    _tripSubscription = TripService.instance
+        .watchTrips(_currentMemory.teamId)
+        .listen((trips) {
+          if (!mounted) return;
+          final matched = trips
+              .where((t) => t.id == _currentMemory.id)
+              .firstOrNull;
+          if (matched != null) {
+            setState(() {
+              _currentMemory = matched;
+            });
+            widget.onUpdateMemory?.call(matched);
+          }
+        });
+  }
+
+  @override
+  void dispose() {
+    _tripSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -58,10 +92,15 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.memory != oldWidget.memory) {
       _currentMemory = widget.memory;
+      if (widget.memory.teamId != oldWidget.memory.teamId) {
+        _subscribeToMemoryUpdates();
+      }
     }
   }
 
   TripMemory get memory => _currentMemory;
+
+  List<MemoryPin> get _pins => _currentMemory.pins;
 
   Future<void> _showEditTitleDialog(BuildContext context) async {
     final controller = TextEditingController(text: memory.title);
@@ -105,8 +144,6 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     }
   }
 
-  late final List<MemoryPin> _pins = List<MemoryPin>.from(widget.memory.pins);
-
   /// 思い出削除時に「レビューも同時に削除するか」を質問し、チェックリストで選択する方式
   Future<void> _confirmDelete(BuildContext context) async {
     final availablePins = List<MemoryPin>.from(_pins);
@@ -139,7 +176,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '「${widget.memory.title}」を削除します。',
+                      '「${memory.title}」を削除します。',
                       style: const TextStyle(
                         fontSize: 14,
                         color: AppTheme.darkGrey,
@@ -302,8 +339,12 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
 
     if (confirmed == true && mounted) {
       setState(() {
-        _pins.removeWhere((p) => p.id == pin.id);
+        final updatedPins = _currentMemory.pins
+            .where((p) => p.id != pin.id)
+            .toList();
+        _currentMemory = _currentMemory.copyWith(pins: updatedPins);
       });
+      widget.onUpdateMemory?.call(_currentMemory);
       widget.onDeleteSinglePin?.call(pin);
       ScaffoldMessenger.of(
         context,
@@ -311,82 +352,329 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     }
   }
 
+  Future<void> _showConfigureCloudRunUrlDialog(
+    BuildContext context,
+    VoidCallback onUpdated,
+  ) async {
+    final controller = TextEditingController(
+      text: ShareService.instance.baseUrl,
+    );
+    final updated = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Cloud Run 共有サーバーURL設定'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Cloud Run ベースURL',
+                  hintText: 'https://my-map-share-viewer-xxx.run.app',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ActionChip(
+                    label: const Text(
+                      'ローカル検証 (localhost:8080)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = ShareService.localDevBaseUrl;
+                    },
+                  ),
+                  ActionChip(
+                    label: const Text(
+                      'Cloud Run デフォルト',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () {
+                      controller.text = ShareService.defaultCloudRunUrl;
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (updated != null) {
+      ShareService.instance.updateBaseUrl(updated);
+      onUpdated();
+    }
+  }
+
   void _showShareSheet(BuildContext context) {
-    final summaryText =
-        '【${widget.memory.title}】\n'
-        '期間: ${widget.memory.formattedDateRange} / 総移動距離: ${widget.memory.formattedDistance}\n'
-        '訪問スポット: ${_pins.map((p) => p.placeName).join(' → ')}';
+    Future<ShareLinkResult> shareFuture = ShareService.instance.createShareLink(
+      memory,
+      overridePins: _pins,
+    );
 
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppTheme.pureWhite,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.send_outlined, color: AppTheme.darkGrey),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '「${widget.memory.title}」を共有',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.darkGrey,
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                child: FutureBuilder<ShareLinkResult>(
+                  future: shareFuture,
+                  builder: (context, snapshot) {
+                    final isLoading =
+                        snapshot.connectionState == ConnectionState.waiting;
+                    final result = snapshot.data;
+
+                    final fallbackSummary =
+                        '【${memory.title}】\n'
+                        '期間: ${memory.formattedDateRange} / 総移動距離: ${memory.formattedDistance}\n'
+                        '訪問スポット: ${_pins.map((p) => p.placeName).join(' → ')}';
+
+                    final summaryText = result?.summaryText ?? fallbackSummary;
+                    final shareUrl = result?.shareUrl ?? '';
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.send_outlined,
+                              color: AppTheme.darkGrey,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '「${memory.title}」を共有',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.darkGrey,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Cloud Run URL設定',
+                              icon: const Icon(
+                                Icons.settings_outlined,
+                                size: 20,
+                                color: AppTheme.primaryGrey,
+                              ),
+                              onPressed: () {
+                                _showConfigureCloudRunUrlDialog(context, () {
+                                  setModalState(() {
+                                    shareFuture = ShareService.instance
+                                        .createShareLink(
+                                          memory,
+                                          overridePins: _pins,
+                                        );
+                                  });
+                                });
+                              },
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
-                  ],
+                        const SizedBox(height: 6),
+                        const Text(
+                          'リンクを開くと閲覧専用のWebマップが表示され、各ピンの写真やレビューを確認できます（閲覧者は編集できません）。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.primaryGrey,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        if (isLoading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    'Cloud Run 共有マップリンクを作成中...',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppTheme.primaryGrey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else ...[
+                          if (shareUrl.isNotEmpty) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceGrey,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTheme.lightGrey),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.link,
+                                    size: 18,
+                                    color: AppTheme.darkGrey,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      shareUrl,
+                                      key: const Key(
+                                        'generated_share_url_text',
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.darkGrey,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceGrey,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.lightGrey),
+                            ),
+                            child: Text(
+                              summaryText,
+                              maxLines: 6,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.darkGrey,
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (shareUrl.isNotEmpty) ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    key: const Key('copy_share_url_button'),
+                                    onPressed: () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: shareUrl),
+                                      );
+                                      if (sheetContext.mounted) {
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          this.context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('共有マップのリンクをコピーしました'),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(Icons.link, size: 18),
+                                    label: const Text('リンクのみコピー'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    key: const Key('open_share_web_map_button'),
+                                    onPressed: () async {
+                                      final uri = Uri.tryParse(shareUrl);
+                                      if (uri != null) {
+                                        await launchUrl(
+                                          uri,
+                                          mode: LaunchMode.externalApplication,
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.public_outlined,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Webマップを開く'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              key: const Key('copy_share_summary_button'),
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: summaryText),
+                                );
+                                if (sheetContext.mounted) {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                                if (mounted) {
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('旅行まとめの共有テキストをコピーしました'),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.send_outlined, size: 18),
+                              label: const Text('共有リンク・まとめをコピー'),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceGrey,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.lightGrey),
-                  ),
-                  child: Text(
-                    summaryText,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.darkGrey,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: summaryText));
-                      if (sheetContext.mounted) {
-                        Navigator.of(sheetContext).pop();
-                      }
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('旅行まとめの共有テキストをコピーしました')),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.send_outlined, size: 18),
-                    label: const Text('共有リンク・まとめをコピー'),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -473,7 +761,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                               ),
                             ),
                             child: Text(
-                              widget.memory.title,
+                              memory.title,
                               style: const TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
@@ -524,7 +812,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                     Row(
                       children: [
                         Text(
-                          widget.memory.formattedDateRange,
+                          memory.formattedDateRange,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w500,
@@ -539,7 +827,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          widget.memory.formattedDistance,
+                          memory.formattedDistance,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,

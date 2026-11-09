@@ -1,0 +1,16 @@
+{
+  "name": "my-map-share-viewer",
+  "version": "1.0.0",
+  "description": "Cloud Run read-only shared memory map viewer for My Map App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "firebase-admin": "^13.0.2"
+  }
+}

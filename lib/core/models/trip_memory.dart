@@ -194,14 +194,28 @@ class TripMemory {
     };
   }
 
-  factory TripMemory.fromFirestore(String id, Map<String, dynamic> data) {
+  factory TripMemory.fromFirestore(
+    String id,
+    Map<String, dynamic> data, {
+    String? fallbackTeamId,
+  }) {
+    final rawTeamId = (data['teamId'] as String?)?.trim() ?? '';
+    final effectiveTeamId =
+        (fallbackTeamId != null && fallbackTeamId.isNotEmpty)
+        ? fallbackTeamId
+        : rawTeamId;
+
     final rawPins = data['pins'] as List<dynamic>? ?? const [];
     final parsedPins = rawPins
         .map((m) {
           if (m is Map) {
             final stringKeyMap = Map<String, dynamic>.from(m);
             final pinId = stringKeyMap['id'] as String? ?? 'pin_${m.hashCode}';
-            return MemoryPin.fromFirestore(pinId, stringKeyMap);
+            return MemoryPin.fromFirestore(
+              pinId,
+              stringKeyMap,
+              fallbackTeamId: effectiveTeamId,
+            );
           }
           return null;
         })
@@ -210,24 +224,35 @@ class TripMemory {
 
     final rawRoutePoints = data['routePoints'] as List<dynamic>? ?? const [];
     final parsedRoutePoints = rawRoutePoints
-        .whereType<Map<String, dynamic>>()
-        .map(RoutePoint.fromMap)
+        .map((m) {
+          if (m is Map) {
+            return RoutePoint.fromMap(Map<String, dynamic>.from(m));
+          }
+          return null;
+        })
+        .whereType<RoutePoint>()
         .toList();
 
     return TripMemory(
       id: id,
-      teamId: data['teamId'] as String? ?? '',
+      teamId: effectiveTeamId,
       title: data['title'] as String? ?? '新しい旅行',
-      startDate: data['startDate'] is String
-          ? (DateTime.tryParse(data['startDate'] as String) ?? DateTime.now())
-          : DateTime.now(),
-      endDate: data['endDate'] is String
-          ? (DateTime.tryParse(data['endDate'] as String) ?? DateTime.now())
-          : DateTime.now(),
+      startDate: _parseDateTime(data['startDate']),
+      endDate: _parseDateTime(data['endDate']),
       pins: parsedPins,
       routePoints: parsedRoutePoints,
       customDistanceKm: (data['customDistanceKm'] as num?)?.toDouble(),
     );
+  }
+
+  static DateTime _parseDateTime(dynamic raw) {
+    if (raw is String) {
+      return DateTime.tryParse(raw) ?? DateTime.now();
+    }
+    if (raw is DateTime) {
+      return raw;
+    }
+    return DateTime.now();
   }
 
   /// 初期サンプル思い出リスト（シードデータなし）
