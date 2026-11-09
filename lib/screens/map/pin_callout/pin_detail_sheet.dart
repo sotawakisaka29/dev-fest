@@ -4,11 +4,16 @@ import '../../../core/theme/app_theme.dart';
 
 /// ピン吹き出しの「詳細→」から表示されるボトムシート
 class PinDetailSheet extends StatelessWidget {
-  const PinDetailSheet({super.key, required this.pin});
+  const PinDetailSheet({super.key, required this.pin, this.onEdit});
 
   final MemoryPin pin;
+  final ValueChanged<MemoryPin>? onEdit;
 
-  static Future<void> show(BuildContext context, MemoryPin pin) {
+  static Future<void> show(
+    BuildContext context,
+    MemoryPin pin, {
+    ValueChanged<MemoryPin>? onEdit,
+  }) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -16,7 +21,7 @@ class PinDetailSheet extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (_) => PinDetailSheet(pin: pin),
+      builder: (_) => PinDetailSheet(pin: pin, onEdit: onEdit),
     );
   }
 
@@ -80,13 +85,28 @@ class PinDetailSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              pin.placeName,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.darkGrey,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    pin.placeName,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.darkGrey,
+                    ),
+                  ),
+                ),
+                if (onEdit != null)
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: AppTheme.primaryGrey),
+                    tooltip: 'スポットを編集',
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      onEdit!(pin);
+                    },
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(

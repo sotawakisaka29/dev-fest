@@ -376,6 +376,9 @@ class GooglePhotosService {
   }
 
   /// GoogleフォトのbaseUrlから画像をBearer認証付きでダウンロードし、一時ファイルとして保存する
+  ///
+  /// Google Photos Picker APIの画像URLはCDNサーバーへリダイレクト（302/307等）される場合があるため、
+  /// リダイレクト追跡時にもBearer認証ヘッダーを保持して確実にバイトデータを取得する。
   Future<String?> downloadPhotoToTempFile({
     required String baseUrl,
     required String accessToken,
@@ -383,20 +386,44 @@ class GooglePhotosService {
   }) async {
     final client = HttpClient();
     try {
-      final downloadUrl =
+      final initialUrl =
           baseUrl.contains('=') ? baseUrl : '$baseUrl=w800-h800';
-      final uri = Uri.parse(downloadUrl);
-      final request = await client.getUrl(uri);
-      request.headers.set(
-        HttpHeaders.authorizationHeader,
-        'Bearer $accessToken',
-      );
+      Uri currentUri = Uri.parse(initialUrl);
 
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        debugPrint(
-          'Failed to download Google Photo: HTTP ${response.statusCode}',
+      HttpClientResponse? response;
+      int redirectCount = 0;
+      const maxRedirects = 5;
+
+      while (redirectCount < maxRedirects) {
+        final request = await client.getUrl(currentUri);
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $accessToken',
         );
+        request.followRedirects = false;
+
+        response = await request.close();
+
+        if (response.isRedirect) {
+          final location = response.headers.value(HttpHeaders.locationHeader);
+          await response.drain<void>();
+          if (location == null || location.isEmpty) {
+            break;
+          }
+          currentUri = currentUri.resolve(location);
+          redirectCount++;
+          continue;
+        }
+        break;
+      }
+
+      if (response == null || response.statusCode != 200) {
+        debugPrint(
+          'Failed to download Google Photo: HTTP ${response?.statusCode}',
+        );
+        if (response != null) {
+          await response.drain<void>();
+        }
         return null;
       }
 

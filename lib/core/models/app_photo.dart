@@ -44,4 +44,32 @@ class AppPhoto {
       isFromGooglePhotos: isFromGooglePhotos ?? this.isFromGooglePhotos,
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'label': label,
+      'url': url,
+      'localPath': localPath,
+      'takenAt': takenAt?.toIso8601String(),
+      'isFromGooglePhotos': isFromGooglePhotos,
+    };
+  }
+
+  factory AppPhoto.fromMap(Map<String, dynamic> map) {
+    DateTime? takenAt;
+    if (map['takenAt'] != null) {
+      if (map['takenAt'] is String) {
+        takenAt = DateTime.tryParse(map['takenAt'] as String);
+      }
+    }
+    return AppPhoto(
+      id: map['id'] as String? ?? '',
+      label: map['label'] as String? ?? '',
+      url: map['url'] as String?,
+      localPath: map['localPath'] as String?,
+      takenAt: takenAt,
+      isFromGooglePhotos: map['isFromGooglePhotos'] as bool? ?? true,
+    );
+  }
 }

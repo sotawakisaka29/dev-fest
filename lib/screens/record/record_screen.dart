@@ -4,18 +4,25 @@ import '../../core/models/app_photo.dart';
 import '../../core/models/memory_pin.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/google_photos_service.dart';
+import '../../core/services/storage_service.dart';
 import '../../core/theme/app_theme.dart';
 import 'location_input/location_input_section.dart';
 import 'photo_picker/photo_picker_section.dart';
 import 'review_input/review_input_section.dart';
 import 'time_range/time_range_section.dart';
 
-/// 記録作成画面（端末アルバム＆Google Photos Picker API並行対応）
+/// 記録作成・編集画面（端末アルバム＆Google Photos Picker API並行対応）
 class RecordScreen extends StatefulWidget {
-  const RecordScreen({super.key, required this.teamId, this.activeTripId});
+  const RecordScreen({
+    super.key,
+    required this.teamId,
+    this.activeTripId,
+    this.initialPin,
+  });
 
   final String teamId;
   final String? activeTripId;
+  final MemoryPin? initialPin;
 
   @override
   State<RecordScreen> createState() => _RecordScreenState();
@@ -26,6 +33,8 @@ class _RecordScreenState extends State<RecordScreen>
   final TextEditingController _placeController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
+
+  bool get _isEditing => widget.initialPin != null;
 
   bool _shareLocation = true;
   String _selectedAddress = '東京都江東区平野1-4-8';
@@ -42,11 +51,46 @@ class _RecordScreenState extends State<RecordScreen>
   final List<AppPhoto> _photos = [];
   bool _isLoadingPhotos = false;
   String _loadingMessage = 'Googleフォトを起動中...';
+  bool _isUploading = false;
+  String _uploadMessage = '写真をクラウドに保存中...';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final init = widget.initialPin;
+    if (init != null) {
+      _placeController.text = init.placeName;
+      _commentController.text = init.comment;
+      _selectedAddress = init.address;
+      _selectedPrefecture = init.prefecture;
+      _selectedLatitude = init.latitude;
+      _selectedLongitude = init.longitude;
+      _selectedNormalizedPosition = init.mapNormalizedPosition;
+      _rating = init.rating;
+      _shareLocation = init.shareLocation;
+      if (init.recordedDate != null) {
+        _selectedDate = init.recordedDate!;
+      }
+      _photos.addAll(init.photos);
+      _parseInitialTime(init.startTime, isStart: true);
+      _parseInitialTime(init.endTime, isStart: false);
+    }
+  }
+
+  void _parseInitialTime(String timeStr, {required bool isStart}) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        final h = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        if (isStart) {
+          _startTime = TimeOfDay(hour: h, minute: m);
+        } else {
+          _endTime = TimeOfDay(hour: h, minute: m);
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -255,34 +299,86 @@ class _RecordScreenState extends State<RecordScreen>
     return '$h:$m';
   }
 
-  void _handleSave() {
+  Future<void> _handleSave() async {
+    if (_isUploading) return;
+
+    setState(() {
+      _isUploading = true;
+      _uploadMessage = '写真をクラウドにアップロード中...';
+    });
+
+    List<AppPhoto> finalPhotos = List<AppPhoto>.from(_photos);
+    try {
+      finalPhotos = await StorageService.instance.uploadPhotos(
+        groupId: widget.teamId,
+        photos: _photos,
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _uploadMessage = '写真をクラウドに保存中 ($current/$total)...';
+            });
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Photo upload error during save: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+
+    if (!mounted) return;
+
     final placeName = _placeController.text.trim().isEmpty
-        ? '新しい思い出スポット'
+        ? (_isEditing ? widget.initialPin!.placeName : '新しい思い出スポット')
         : _placeController.text.trim();
 
-    final createdPin = MemoryPin(
-      id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
-      teamId: widget.teamId,
-      placeName: placeName,
-      address: _selectedAddress,
-      prefecture: _selectedPrefecture,
-      latitude: _selectedLatitude,
-      longitude: _selectedLongitude,
-      mapNormalizedPosition: _selectedNormalizedPosition,
-      startTime: _formatTime(_startTime),
-      endTime: _formatTime(_endTime),
-      rating: _rating,
-      comment: _commentController.text.trim().isEmpty
-          ? 'とても良い時間を過ごせました。'
-          : _commentController.text.trim(),
-      photoLabels: _photos.map((p) => p.label).toList(),
-      photos: List<AppPhoto>.from(_photos),
-      recordedDate: _selectedDate,
-      tripId: widget.activeTripId,
-      shareLocation: _shareLocation,
-    );
+    final MemoryPin pinToReturn;
+    if (_isEditing) {
+      pinToReturn = widget.initialPin!.copyWith(
+        placeName: placeName,
+        address: _selectedAddress,
+        prefecture: _selectedPrefecture,
+        latitude: _selectedLatitude,
+        longitude: _selectedLongitude,
+        mapNormalizedPosition: _selectedNormalizedPosition,
+        startTime: _formatTime(_startTime),
+        endTime: _formatTime(_endTime),
+        rating: _rating,
+        comment: _commentController.text.trim().isEmpty
+            ? 'とても良い時間を過ごせました。'
+            : _commentController.text.trim(),
+        photoLabels: finalPhotos.map((p) => p.label).toList(),
+        photos: finalPhotos,
+        recordedDate: _selectedDate,
+        shareLocation: _shareLocation,
+      );
+    } else {
+      pinToReturn = MemoryPin(
+        id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
+        teamId: widget.teamId,
+        placeName: placeName,
+        address: _selectedAddress,
+        prefecture: _selectedPrefecture,
+        latitude: _selectedLatitude,
+        longitude: _selectedLongitude,
+        mapNormalizedPosition: _selectedNormalizedPosition,
+        startTime: _formatTime(_startTime),
+        endTime: _formatTime(_endTime),
+        rating: _rating,
+        comment: _commentController.text.trim().isEmpty
+            ? 'とても良い時間を過ごせました。'
+            : _commentController.text.trim(),
+        photoLabels: finalPhotos.map((p) => p.label).toList(),
+        photos: finalPhotos,
+        recordedDate: _selectedDate,
+        tripId: widget.activeTripId,
+        shareLocation: _shareLocation,
+      );
+    }
 
-    Navigator.of(context).pop(createdPin);
+    Navigator.of(context).pop(pinToReturn);
   }
 
   @override
@@ -290,9 +386,9 @@ class _RecordScreenState extends State<RecordScreen>
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: const Text(
-          '記録',
-          style: TextStyle(
+        title: Text(
+          _isEditing ? '記録を編集' : '記録',
+          style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
             color: AppTheme.darkGrey,
@@ -305,87 +401,133 @@ class _RecordScreenState extends State<RecordScreen>
             icon: const Icon(Icons.arrow_back, color: AppTheme.darkGrey),
           ),
           IconButton(
-            tooltip: '保存する',
+            tooltip: _isEditing ? '変更を保存' : '保存する',
             onPressed: _handleSave,
             icon: const Icon(Icons.check, color: AppTheme.darkGrey),
           ),
           const SizedBox(width: 8),
         ],
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              LocationInputSection(
-                shareLocation: _shareLocation,
-                placeController: _placeController,
-                selectedAddress: _selectedAddress,
-                selectedPrefecture: _selectedPrefecture,
-                onShareLocationChanged: (value) {
-                  setState(() => _shareLocation = value);
-                },
-                onPlaceTextChanged: (_) {
-                  setState(() {});
-                },
-                onCandidateSelected: (candidate) {
-                  setState(() {
-                    _placeController.text = candidate.name;
-                    _selectedAddress = candidate.address;
-                    _selectedPrefecture = candidate.prefecture;
-                    _selectedLatitude = candidate.latitude;
-                    _selectedLongitude = candidate.longitude;
-                    _selectedNormalizedPosition = candidate.normalizedPosition;
-                  });
-                },
+      body: Stack(
+        children: [
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LocationInputSection(
+                    shareLocation: _shareLocation,
+                    placeController: _placeController,
+                    selectedAddress: _selectedAddress,
+                    selectedPrefecture: _selectedPrefecture,
+                    onShareLocationChanged: (value) {
+                      setState(() => _shareLocation = value);
+                    },
+                    onPlaceTextChanged: (_) {
+                      setState(() {});
+                    },
+                    onCandidateSelected: (candidate) {
+                      setState(() {
+                        _placeController.text = candidate.name;
+                        _selectedAddress = candidate.address;
+                        _selectedPrefecture = candidate.prefecture;
+                        _selectedLatitude = candidate.latitude;
+                        _selectedLongitude = candidate.longitude;
+                        _selectedNormalizedPosition = candidate.normalizedPosition;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  // 日時帯の選択セクション（訪問記録メタデータとして維持）
+                  TimeRangeSection(
+                    selectedDate: _selectedDate,
+                    startTime: _startTime,
+                    endTime: _endTime,
+                    isLoadingPhotos: false,
+                    onDateChanged: (date) {
+                      setState(() => _selectedDate = date);
+                    },
+                    onStartTimeChanged: (time) {
+                      setState(() => _startTime = time);
+                    },
+                    onEndTimeChanged: (time) {
+                      setState(() => _endTime = time);
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  ReviewInputSection(
+                    rating: _rating,
+                    commentController: _commentController,
+                    onRatingChanged: (value) => setState(() => _rating = value),
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  // 写真セクション（端末アルバム選択 ＆ Google Photos Picker API並行対応）
+                  PhotoPickerSection(
+                    photos: _photos,
+                    isLoading: _isLoadingPhotos,
+                    loadingMessage: _loadingMessage,
+                    onAddFromGallery: _handlePickFromGallery,
+                    onPickFromGooglePhotos: _handlePickFromGooglePhotos,
+                    onRemovePhotoAt: (index) {
+                      setState(() {
+                        _photos.removeAt(index);
+                      });
+                    },
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 16),
-              // 日時帯の選択セクション（訪問記録メタデータとして維持）
-              TimeRangeSection(
-                selectedDate: _selectedDate,
-                startTime: _startTime,
-                endTime: _endTime,
-                isLoadingPhotos: false,
-                onDateChanged: (date) {
-                  setState(() => _selectedDate = date);
-                },
-                onStartTimeChanged: (time) {
-                  setState(() => _startTime = time);
-                },
-                onEndTimeChanged: (time) {
-                  setState(() => _endTime = time);
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 12),
-              ReviewInputSection(
-                rating: _rating,
-                commentController: _commentController,
-                onRatingChanged: (value) => setState(() => _rating = value),
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 16),
-              // 写真セクション（端末アルバム選択 ＆ Google Photos Picker API並行対応）
-              PhotoPickerSection(
-                photos: _photos,
-                isLoading: _isLoadingPhotos,
-                loadingMessage: _loadingMessage,
-                onAddFromGallery: _handlePickFromGallery,
-                onPickFromGooglePhotos: _handlePickFromGooglePhotos,
-                onRemovePhotoAt: (index) {
-                  setState(() {
-                    _photos.removeAt(index);
-                  });
-                },
-              ),
-            ],
+            ),
           ),
-        ),
+          if (_isUploading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.45),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.pureWhite,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(
+                          color: AppTheme.darkGrey,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _uploadMessage,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.darkGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
