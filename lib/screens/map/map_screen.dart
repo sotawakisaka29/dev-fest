@@ -43,8 +43,8 @@ class _MapScreenState extends State<MapScreen> {
   /// 思い出詳細の「↗ Google Mapへ飛ぶ」等からフォーカス要求されたピン
   MemoryPin? _externalFocusPin;
 
-  /// 現在1倍表示域にあるかどうか（上部タブは1倍の時のみ表示）
-  bool _isAt1xZoom = true;
+  /// ホームタブ（HeaderMenuOverlay）の表示状態（右下ホームボタンで表示/非表示を切り替え）
+  bool _isHomeTabVisible = true;
   bool _isMapInteracting = false;
 
   /// 旅行スタート〜停止の状態管理
@@ -676,20 +676,19 @@ class _MapScreenState extends State<MapScreen> {
               },
               onTapRegionPins: _handleTapRegionPins,
               onInteractionChanged: _handleMapInteraction,
-              onZoom1xChanged: (isAt1x) {
-                if (_isAt1xZoom != isAt1x) {
-                  setState(() => _isAt1xZoom = isAt1x);
-                }
+              isHomeTabVisible: _isHomeTabVisible,
+              onToggleHomeTab: () {
+                setState(() => _isHomeTabVisible = !_isHomeTabVisible);
               },
             ),
           ),
 
-          // 2. 左上ヘッダーメニュー（1倍の時のみ表示・縦横スクロール中やホームボタン押下時も1倍なら消えない）
+          // 2. 左上ヘッダーメニュー（ホームボタンで表示/非表示を切り替え可能）
           SafeArea(
             child: Align(
               alignment: Alignment.topLeft,
               child: HeaderMenuOverlay(
-                visible: _isAt1xZoom,
+                visible: _isHomeTabVisible,
                 teams: _teams,
                 selectedTeam: _selectedTeam,
                 isTripActive: _isTripActive,

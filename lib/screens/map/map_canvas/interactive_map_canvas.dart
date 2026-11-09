@@ -19,7 +19,8 @@ class InteractiveMapCanvas extends StatefulWidget {
     required this.onOpenPinDetail,
     required this.onTapRegionPins,
     required this.onInteractionChanged,
-    required this.onZoom1xChanged,
+    this.onToggleHomeTab,
+    this.isHomeTabVisible = true,
     this.memories = const [],
     this.activeRoutePoints = const [],
     this.isTripActive = false,
@@ -41,8 +42,11 @@ class InteractiveMapCanvas extends StatefulWidget {
 
   final ValueChanged<bool> onInteractionChanged;
 
-  /// 現在1倍表示（初期全体表示域）にあるかどうかを通知するコールバック
-  final ValueChanged<bool> onZoom1xChanged;
+  /// ホームタブ（HeaderMenuOverlay）の表示・非表示を切り替えるコールバック
+  final VoidCallback? onToggleHomeTab;
+
+  /// ホームタブの現在の表示状態
+  final bool isHomeTabVisible;
 
   /// 思い出詳細画面の「↗ Google Mapへ飛ぶ」等から明示的にジャンプ要求されたピン
   final MemoryPin? externalFocusPin;
@@ -55,9 +59,6 @@ class InteractiveMapCanvas extends StatefulWidget {
 class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
   /// 1倍（国全体表示）の基準ズーム倍率
   static const double _zoom1x = 5.2;
-
-  /// 1倍とみなす上限ズーム閾値（上部タブの表示条件）
-  static const double _zoom1xMaxThreshold = 6.2;
 
   /// 県の形 → 市区町村の形に切り替わるズーム閾値（県が画面いっぱいになる手前）
   static const double _cityModeZoomThreshold = 6.8;
@@ -217,7 +218,6 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
     }
   }
 
-  bool get _isAt1x => _currentCameraPosition.zoom < _zoom1xMaxThreshold;
   bool get _isDetailPinMode =>
       _currentCameraPosition.zoom >= _detailPinZoomThreshold;
   bool get _isCityPhotoMode =>
@@ -241,33 +241,13 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
   }
 
   void _updateCameraState(CameraPosition position) {
-    final was1x = _isAt1x;
     final wasPinVisible = _isPinVisibleMode;
     setState(() {
       _currentCameraPosition = position;
     });
-    if (was1x != _isAt1x) {
-      widget.onZoom1xChanged(_isAt1x);
-    }
     if (wasPinVisible && !_isPinVisibleMode && widget.selectedPin != null) {
       widget.onPinSelected(null);
     }
-  }
-
-  /// ホームボタンを押したときに1倍（日本地図全体表示・県シルエット写真表示）へ戻す
-  Future<void> _returnToHome1x() async {
-    setState(() {
-      _forcePinOnlyMode = false;
-    });
-    widget.onPinSelected(null);
-    final homePos = _initialCountryCameraPosition;
-    _updateCameraState(homePos);
-
-    final controller = _mapController;
-    if (controller == null) return;
-    try {
-      await controller.animateCamera(CameraUpdate.newCameraPosition(homePos));
-    } catch (_) {}
   }
 
   /// ホームボタンの隣の「ピンだけをすぐに見る」ボタンを押したときの切り替え
@@ -592,20 +572,27 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // ホームボタン（アイコンのみ・押したときには1倍の画面に戻す）
+                    // ホームボタン（押したときにはホームタブの表示/非表示を切り替え）
                     Material(
-                      color: AppTheme.pureWhite.withValues(alpha: 0.92),
+                      key: const Key('home_tab_toggle_button'),
+                      color: widget.isHomeTabVisible
+                          ? AppTheme.darkGrey
+                          : AppTheme.pureWhite.withValues(alpha: 0.92),
                       elevation: 2,
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
-                        onTap: _returnToHome1x,
-                        child: const Padding(
-                          padding: EdgeInsets.all(16),
+                        onTap: widget.onToggleHomeTab,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
                           child: Icon(
-                            Icons.home_outlined,
+                            widget.isHomeTabVisible
+                                ? Icons.home
+                                : Icons.home_outlined,
                             size: 24,
-                            color: AppTheme.darkGrey,
+                            color: widget.isHomeTabVisible
+                                ? AppTheme.pureWhite
+                                : AppTheme.darkGrey,
                           ),
                         ),
                       ),

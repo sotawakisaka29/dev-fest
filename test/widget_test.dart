@@ -568,17 +568,39 @@ void main() {
     await tester.tap(find.text('ゲストとして参加'));
     await tester.pumpAndSettle();
 
-    // 1. 1倍表示でマップ移動（ドラッグ操作）を行っても、HeaderMenuOverlay（ホームタブ）が表示されたままであること
+    // 1. 初期状態でHeaderMenuOverlay（ホームタブ）が表示されていること
     expect(find.text('MyMap'), findsOneWidget);
     expect(find.text('旅行スタート'), findsOneWidget);
+    expect(find.byIcon(Icons.home), findsOneWidget);
 
+    // ホームボタンを押すとホームタブが非表示になり、ボタンがアウトラインアイコンに切り替わること
+    await tester.tap(find.byKey(const Key('home_tab_toggle_button')));
+    await tester.pumpAndSettle();
+
+    final headerOpacity = tester.widget<AnimatedOpacity>(
+      find.descendant(
+        of: find.byType(HeaderMenuOverlay),
+        matching: find.byType(AnimatedOpacity),
+      ),
+    );
+    expect(headerOpacity.opacity, equals(0.0));
+    expect(find.byIcon(Icons.home_outlined), findsOneWidget);
+
+    // もう一度ホームボタンを押すとホームタブが再表示され、塗りつぶしアイコンに戻ること
+    await tester.tap(find.byKey(const Key('home_tab_toggle_button')));
+    await tester.pumpAndSettle();
+
+    final headerOpacityRestored = tester.widget<AnimatedOpacity>(
+      find.descendant(
+        of: find.byType(HeaderMenuOverlay),
+        matching: find.byType(AnimatedOpacity),
+      ),
+    );
+    expect(headerOpacityRestored.opacity, equals(1.0));
+    expect(find.byIcon(Icons.home), findsOneWidget);
+
+    // マップドラッグを行っても、倍率等で勝手に非表示にならず表示が維持されること
     await tester.drag(find.byType(GoogleMap), const Offset(-100, -100));
-    await tester.pump();
-    expect(find.text('MyMap'), findsOneWidget);
-    expect(find.text('旅行スタート'), findsOneWidget);
-
-    // ホームボタンを押した瞬間もホームタブが表示されたままであること
-    await tester.tap(find.byIcon(Icons.home_outlined));
     await tester.pump();
     expect(find.text('MyMap'), findsOneWidget);
     expect(find.text('旅行スタート'), findsOneWidget);
@@ -600,8 +622,8 @@ void main() {
     expect(find.text('嵐山 竹林の小径'), findsOneWidget);
     expect(find.text('詳細'), findsOneWidget);
 
-    // ホームボタンを押して戻す
-    await tester.tap(find.byIcon(Icons.home_outlined));
+    // ピンカードの閉じるボタンをタップして閉じる
+    await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
 
     // 3. グループ切替プルダウンから別グループ（箱根・伊豆温泉旅）へ切り替え
