@@ -30,12 +30,9 @@ class _MapScreenState extends State<MapScreen> {
   List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
   late TeamGroup _selectedTeam = _teams.first;
 
-  final List<MemoryPin> _allPins = List<MemoryPin>.from(
-    MemoryPin.initialSamplePins,
-  );
+  final List<MemoryPin> _allPins = [];
 
-  late final List<TripMemory> _allMemories =
-      TripMemory.buildInitialSampleMemories(_allPins);
+  final List<TripMemory> _allMemories = [];
 
   /// 起動直後はピン非選択（1倍の全体表示から開始）
   MemoryPin? _selectedPin;

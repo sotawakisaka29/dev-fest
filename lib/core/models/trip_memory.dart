@@ -151,74 +151,8 @@ class TripMemory {
     );
   }
 
-  /// 初期サンプル思い出リスト
+  /// 初期サンプル思い出リスト（シードデータなし）
   static List<TripMemory> buildInitialSampleMemories(List<MemoryPin> allPins) {
-    final kantoPins = allPins
-        .where((p) => p.tripId == 'trip_kanto_day')
-        .toList();
-    final kyotoPins = allPins
-        .where((p) => p.tripId == 'trip_kyoto_autumn')
-        .toList();
-    final hokkaidoPins = allPins
-        .where((p) => p.tripId == 'trip_hokkaido_gourmet')
-        .toList();
-    final hakonePins = allPins
-        .where((p) => p.tripId == 'trip_hakone_onsen')
-        .toList();
-    final cafePins = allPins
-        .where((p) => p.tripId == 'trip_daikanyama_cafe')
-        .toList();
-
-    return [
-      if (kantoPins.isNotEmpty)
-        TripMemory(
-          id: 'trip_kanto_day',
-          teamId: 'daily',
-          title: '東京・鎌倉ドライブ旅',
-          startDate: DateTime(2026, 10, 18),
-          endDate: DateTime(2026, 10, 19),
-          pins: kantoPins,
-        ),
-      if (kyotoPins.isNotEmpty)
-        TripMemory(
-          id: 'trip_kyoto_autumn',
-          teamId: 'daily',
-          title: '京都・嵐山散策',
-          startDate: DateTime(2026, 10, 25),
-          endDate: DateTime(2026, 10, 26),
-          pins: kyotoPins,
-          customDistanceKm: 12.4,
-        ),
-      if (hokkaidoPins.isNotEmpty)
-        TripMemory(
-          id: 'trip_hokkaido_gourmet',
-          teamId: 'daily',
-          title: '札幌ナイトグルメ巡り',
-          startDate: DateTime(2026, 11, 1),
-          endDate: DateTime(2026, 11, 3),
-          pins: hokkaidoPins,
-          customDistanceKm: 28.6,
-        ),
-      if (hakonePins.isNotEmpty)
-        TripMemory(
-          id: 'trip_hakone_onsen',
-          teamId: 'hakone_trip',
-          title: '箱根温泉1泊2日',
-          startDate: DateTime(2026, 11, 2),
-          endDate: DateTime(2026, 11, 3),
-          pins: hakonePins,
-          customDistanceKm: 18.2,
-        ),
-      if (cafePins.isNotEmpty)
-        TripMemory(
-          id: 'trip_daikanyama_cafe',
-          teamId: 'cafe_club',
-          title: '代官山カフェ巡り',
-          startDate: DateTime(2026, 11, 5),
-          endDate: DateTime(2026, 11, 5),
-          pins: cafePins,
-          customDistanceKm: 4.5,
-        ),
-    ];
+    return const [];
   }
 }

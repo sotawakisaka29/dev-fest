@@ -33,24 +33,6 @@ class TripService {
   void _initLocalFallbacks() {
     _localPins.clear();
     _localTrips.clear();
-
-    // 初期サンプルピンをグループごとに分類
-    for (final pin in MemoryPin.initialSamplePins) {
-      _localPins.putIfAbsent(pin.teamId, () => []).add(pin);
-    }
-    // 初期サンプル旅行をグループごとに分類
-    final allSampleMemories = TripMemory.buildInitialSampleMemories(
-      MemoryPin.initialSamplePins,
-    );
-    for (final trip in allSampleMemories) {
-      _localTrips.putIfAbsent(trip.teamId, () => []).add(trip);
-    }
-
-    // 初期の個人用グループ（personal / MyMap）にもサンプルを初期設定
-    _localPins
-        .putIfAbsent('personal', () => [])
-        .addAll(MemoryPin.initialSamplePins);
-    _localTrips.putIfAbsent('personal', () => []).addAll(allSampleMemories);
   }
 
   /// テスト用初期化リセット
