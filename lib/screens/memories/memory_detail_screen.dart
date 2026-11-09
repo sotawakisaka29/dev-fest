@@ -22,14 +22,18 @@ class MemoryDetailScreen extends StatefulWidget {
     required this.onDelete,
     this.onJumpToMapPin,
     this.onUpdateTitle,
+    this.onUpdateMemory,
     this.onEditPin,
+    this.onAddPin,
   });
 
   final TripMemory memory;
   final VoidCallback onDelete;
   final ValueChanged<MemoryPin>? onJumpToMapPin;
   final ValueChanged<String>? onUpdateTitle;
-  final ValueChanged<MemoryPin>? onEditPin;
+  final ValueChanged<TripMemory>? onUpdateMemory;
+  final Future<MemoryPin?> Function(MemoryPin)? onEditPin;
+  final Future<MemoryPin?> Function(String tripId, String teamId)? onAddPin;
 
   @override
   State<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
@@ -221,6 +225,18 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     );
   }
 
+  Future<void> _handleAddNewSpot() async {
+    final newPin = await widget.onAddPin?.call(memory.id, memory.teamId);
+    if (newPin != null && mounted) {
+      setState(() {
+        final updatedPins = List<MemoryPin>.from(_currentMemory.pins)
+          ..add(newPin);
+        _currentMemory = _currentMemory.copyWith(pins: updatedPins);
+      });
+      widget.onUpdateMemory?.call(_currentMemory);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // レビューを高評価順（rating の降順）にソート
@@ -357,23 +373,90 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'レビュー',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.darkGrey,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'レビュー',
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.darkGrey,
+                          ),
+                        ),
+                        if (widget.onAddPin != null)
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.darkGrey,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: _handleAddNewSpot,
+                            icon: const Icon(
+                              Icons.add_location_alt_outlined,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'スポットを追加',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     if (sortedPins.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Text(
-                          '記録されたレビューはありません',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppTheme.mediumGrey,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              const Text(
+                                '記録されたレビューはありません',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              if (widget.onAddPin != null) ...[
+                                const SizedBox(height: 16),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppTheme.darkGrey,
+                                    side: const BorderSide(
+                                      color: AppTheme.lightGrey,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  onPressed: _handleAddNewSpot,
+                                  icon: const Icon(
+                                    Icons.add_location_alt_outlined,
+                                    size: 18,
+                                  ),
+                                  label: const Text(
+                                    '新しいスポットを追加',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       )
@@ -427,7 +510,28 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                                   if (widget.onEditPin != null)
                                     InkWell(
                                       borderRadius: BorderRadius.circular(8),
-                                      onTap: () => widget.onEditPin!(pin),
+                                      onTap: () async {
+                                        final updatedPin = await widget
+                                            .onEditPin!(pin);
+                                        if (updatedPin != null && mounted) {
+                                          setState(() {
+                                            final updatedPins = _currentMemory
+                                                .pins
+                                                .map(
+                                                  (p) =>
+                                                      p.id == updatedPin.id
+                                                          ? updatedPin
+                                                          : p,
+                                                )
+                                                .toList();
+                                            _currentMemory = _currentMemory
+                                                .copyWith(pins: updatedPins);
+                                          });
+                                          widget.onUpdateMemory?.call(
+                                            _currentMemory,
+                                          );
+                                        }
+                                      },
                                       child: const Padding(
                                         padding: EdgeInsets.all(8),
                                         child: Tooltip(

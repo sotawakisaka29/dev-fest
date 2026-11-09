@@ -169,18 +169,22 @@ class MemoryPin {
             .toList() ??
         <String>[];
     final rawPhotos = data['photos'] as List<dynamic>? ?? const [];
-    final parsedPhotos = rawPhotos.whereType<Map<String, dynamic>>().map((m) {
-      return AppPhoto(
-        id: m['id'] as String? ?? '',
-        label: m['label'] as String? ?? '',
-        url: m['url'] as String?,
-        localPath: m['localPath'] as String?,
-        takenAt: m['takenAt'] is String
-            ? DateTime.tryParse(m['takenAt'] as String)
-            : null,
-        isFromGooglePhotos: m['isFromGooglePhotos'] as bool? ?? true,
-      );
-    }).toList();
+    final parsedPhotos = rawPhotos.map((m) {
+      if (m is Map) {
+        final stringKeyMap = Map<String, dynamic>.from(m);
+        return AppPhoto(
+          id: stringKeyMap['id'] as String? ?? '',
+          label: stringKeyMap['label'] as String? ?? '',
+          url: stringKeyMap['url'] as String?,
+          localPath: stringKeyMap['localPath'] as String?,
+          takenAt: stringKeyMap['takenAt'] is String
+              ? DateTime.tryParse(stringKeyMap['takenAt'] as String)
+              : null,
+          isFromGooglePhotos: stringKeyMap['isFromGooglePhotos'] as bool? ?? true,
+        );
+      }
+      return null;
+    }).whereType<AppPhoto>().toList();
 
     return MemoryPin(
       id: id,
