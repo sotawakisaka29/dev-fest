@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/models/app_photo.dart';
@@ -78,7 +77,9 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
             FilledButton(
               onPressed: () {
                 final trimmed = controller.text.trim();
-                Navigator.of(dialogContext).pop(trimmed.isEmpty ? memory.title : trimmed);
+                Navigator.of(
+                  dialogContext,
+                ).pop(trimmed.isEmpty ? memory.title : trimmed);
               },
               child: const Text('保存'),
             ),
@@ -191,9 +192,7 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                       }
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('旅行まとめの共有テキストをコピーしました'),
-                          ),
+                          const SnackBar(content: Text('旅行まとめの共有テキストをコピーしました')),
                         );
                       }
                     },
@@ -444,8 +443,10 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                                   // ↗ 登録住所の Google Maps アプリへ飛ぶボタン
                                   InkWell(
                                     borderRadius: BorderRadius.circular(8),
-                                    onTap: () =>
-                                        _handleOpenExternalGoogleMap(context, pin),
+                                    onTap: () => _handleOpenExternalGoogleMap(
+                                      context,
+                                      pin,
+                                    ),
                                     child: const Padding(
                                       padding: EdgeInsets.all(8),
                                       child: Tooltip(
@@ -513,19 +514,16 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                     crossAxisSpacing: 8,
                     childAspectRatio: 1.0,
                   ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final photo = allPhotos[index];
-                      return MemoryPhotoThumbnail(
-                        photo: photo,
-                        borderRadius: 0,
-                        showBorder: false,
-                        showCaptionOverlay: false,
-                        showPlaceholderLabel: false,
-                      );
-                    },
-                    childCount: allPhotos.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final photo = allPhotos[index];
+                    return MemoryPhotoThumbnail(
+                      photo: photo,
+                      borderRadius: 0,
+                      showBorder: false,
+                      showCaptionOverlay: false,
+                      showPlaceholderLabel: false,
+                    );
+                  }, childCount: allPhotos.length),
                 ),
               ),
             ],
@@ -568,14 +566,13 @@ class MemoryPhotoThumbnail extends StatelessWidget {
     final palette =
         _samplePalettes[photo.label.hashCode.abs() % _samplePalettes.length];
 
-    final bool hasLocalFile = photo.localPath != null &&
-        photo.localPath!.isNotEmpty &&
-        File(photo.localPath!).existsSync();
+    final localFile = photo.localFile;
+    final bool hasLocalFile = localFile != null && localFile.existsSync();
 
     Widget imageContent;
     if (hasLocalFile) {
       imageContent = Image.file(
-        File(photo.localPath!),
+        localFile,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) {
           if (photo.url != null && photo.url!.isNotEmpty) {
@@ -608,10 +605,7 @@ class MemoryPhotoThumbnail extends StatelessWidget {
             right: 0,
             bottom: 0,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,

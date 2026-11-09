@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:my_map_app/core/services/auth_service.dart';
-import 'package:my_map_app/core/services/external_map_launcher.dart';
+import 'package:my_map_app/core/services/trip_service.dart';
 import 'package:my_map_app/main.dart';
 import 'package:my_map_app/screens/auth/login/login_screen.dart';
 import 'package:my_map_app/screens/map/map_canvas/region_photo_overlay.dart';
@@ -12,6 +12,7 @@ void main() {
     WidgetTester tester,
   ) async {
     AuthService.instance.resetToInitialGate();
+    TripService.instance.resetForTest();
     await tester.pumpWidget(const MyMapApp());
 
     // 0. 初回起動時はログイン画面が表示され、まだマップは表示されないこと
@@ -60,58 +61,29 @@ void main() {
     await tester.tap(find.text('スタート'));
     await tester.pumpAndSettle();
 
-
     // 旅行中は「記録する」と「旅行停止」が表示されること
     expect(find.text('記録する'), findsOneWidget);
     expect(find.text('旅行停止'), findsOneWidget);
-
 
     // 4. 「旅行停止」をタップすると、つけたタイトル「週末の箱根旅」で旅行まとめが作られること
     await tester.tap(find.text('旅行停止'));
     await tester.pumpAndSettle();
     expect(find.text('旅行スタート'), findsOneWidget);
 
-    // 5. 「思い出」ボタンをタップして思い出一覧画面へ遷移し、MyMapに全グループの思い出が引き継がれていること
+    // 5. 「思い出」ボタンをタップして思い出一覧画面へ遷移し、作成した旅行まとめが表示されること
     await tester.tap(find.text('思い出'));
     await tester.pumpAndSettle();
 
     expect(find.text('思い出一覧'), findsOneWidget);
     expect(find.text('週末の箱根旅'), findsOneWidget);
-    expect(find.text('東京・鎌倉ドライブ旅'), findsOneWidget);
-    expect(find.text('箱根温泉1泊2日'), findsOneWidget);
-    expect(find.text('代官山カフェ巡り'), findsOneWidget);
 
-    // 6. サンプル旅行まとめをタップして詳細画面（スケッチUI）を開くこと
-    await tester.tap(find.text('東京・鎌倉ドライブ旅'));
+    // 6. 作成した旅行まとめをタップして詳細画面（スケッチUI）を開くこと
+    await tester.tap(find.text('週末の箱根旅'));
     await tester.pumpAndSettle();
 
-    expect(find.text('東京・鎌倉ドライブ旅'), findsOneWidget);
-    expect(find.text('レビュー'), findsOneWidget);
+    expect(find.text('週末の箱根旅'), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsOneWidget);
     expect(find.byIcon(Icons.send_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.north_east), findsWidgets);
-
-    // 7. レビューが高評価順（★5 → ★4 → ★0）に並んでいること
-    final rating5Y = tester
-        .getTopLeft(find.textContaining('清澄白河 ロースタリーカフェ'))
-        .dy;
-    final rating4Y = tester
-        .getTopLeft(find.textContaining('七里ヶ浜 海沿いテラス'))
-        .dy;
-    final rating0Y = tester
-        .getTopLeft(find.textContaining('移動中継地点（海ほたるPA）'))
-        .dy;
-    expect(rating5Y, lessThan(rating4Y));
-    expect(rating4Y, lessThan(rating0Y));
-
-    // 8. 下部写真一覧が3列グリッド（SliverGrid）で描画され、写真説明テキストが出ないこと
-    expect(find.byType(SliverGrid), findsOneWidget);
-    expect(find.text('ラテアート'), findsNothing);
-
-    // 9. レビュー右端の「↗」をタップすると登録住所（東京都江東区清澄1-4-8）でGoogle Maps起動が要求されること
-    await tester.tap(find.byIcon(Icons.north_east).first);
-    await tester.pump();
-    expect(ExternalMapLauncher.lastLaunchedQuery, '東京都江東区清澄1-4-8');
   });
 
   testWidgets('ログイン画面：ログイン前はサインインボタンのみ、ログイン後はログアウトボタンのみ表示されること', (

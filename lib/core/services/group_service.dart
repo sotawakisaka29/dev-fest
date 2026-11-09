@@ -149,7 +149,9 @@ class GroupService {
           });
     } catch (e) {
       debugPrint('Firestore stream error: $e');
-      return Stream.value(_sortWithPersonalFirst(_localFallbackGroups, userUid));
+      return Stream.value(
+        _sortWithPersonalFirst(_localFallbackGroups, userUid),
+      );
     }
   }
 

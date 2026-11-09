@@ -87,23 +87,23 @@ class StorageService {
         continue;
       }
 
-      // ローカルファイルが存在する場合にアップロード
-      if (photo.localPath != null && photo.localPath!.isNotEmpty) {
-        final file = File(photo.localPath!);
-        if (file.existsSync()) {
-          final downloadUrl = await uploadFile(
-            groupId: groupId,
-            photoId: photo.id.isNotEmpty
-                ? photo.id
-                : 'photo_${DateTime.now().millisecondsSinceEpoch}_$i',
-            file: file,
-          );
+      // ローカルファイルが存在する場合にアップロード（動的パス解決に対応）
+      final resolvedFile = photo.localFile;
+      if (resolvedFile != null && resolvedFile.existsSync()) {
+        final downloadUrl = await uploadFile(
+          groupId: groupId,
+          photoId: photo.id.isNotEmpty
+              ? photo.id
+              : 'photo_${DateTime.now().millisecondsSinceEpoch}_$i',
+          file: resolvedFile,
+        );
 
-          if (downloadUrl != null && downloadUrl.isNotEmpty) {
-            // 永続URLをセット
-            result.add(photo.copyWith(url: downloadUrl));
-            continue;
-          }
+        if (downloadUrl != null && downloadUrl.isNotEmpty) {
+          // 永続URLおよび有効なローカルパスをセット
+          result.add(
+            photo.copyWith(url: downloadUrl, localPath: resolvedFile.path),
+          );
+          continue;
         }
       }
 
