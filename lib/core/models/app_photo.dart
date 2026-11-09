@@ -1,0 +1,85 @@
+import 'dart:io';
+import '../services/photo_storage_service.dart';
+
+/// Googleフォトおよび端末アルバムから選択された写真モデル
+class AppPhoto {
+  const AppPhoto({
+    required this.id,
+    required this.label,
+    this.url,
+    this.localPath,
+    this.takenAt,
+    this.isFromGooglePhotos = true,
+  });
+
+  /// 写真の一意識別子
+  final String id;
+
+  /// 写真のタイトル・ラベル（ファイル名など）
+  final String label;
+
+  /// プレビュー画像URL（GoogleフォトのリモートURL、またはFirebase Storage永続URL）
+  final String? url;
+
+  /// 端末ローカルの写真ファイルパス（端末アルバムまたはローカル保存キャッシュ）
+  final String? localPath;
+
+  /// 撮影日時
+  final DateTime? takenAt;
+
+  /// Googleフォトから選択されたかどうか
+  final bool isFromGooglePhotos;
+
+  /// 端末ローカルの実体ファイル（iOSの再起動時UUID変更にも対応した動的解決）
+  File? get localFile =>
+      PhotoStorageService.instance.resolveLocalFile(localPath);
+
+  /// 実体ファイルが存在するかどうか
+  bool get hasLocalFile => localFile != null;
+
+  AppPhoto copyWith({
+    String? id,
+    String? label,
+    String? url,
+    String? localPath,
+    DateTime? takenAt,
+    bool? isFromGooglePhotos,
+  }) {
+    return AppPhoto(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      url: url ?? this.url,
+      localPath: localPath ?? this.localPath,
+      takenAt: takenAt ?? this.takenAt,
+      isFromGooglePhotos: isFromGooglePhotos ?? this.isFromGooglePhotos,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'label': label,
+      'url': url,
+      'localPath': localPath,
+      'takenAt': takenAt?.toIso8601String(),
+      'isFromGooglePhotos': isFromGooglePhotos,
+    };
+  }
+
+  factory AppPhoto.fromMap(Map<String, dynamic> map) {
+    DateTime? takenAt;
+    if (map['takenAt'] != null) {
+      if (map['takenAt'] is String) {
+        takenAt = DateTime.tryParse(map['takenAt'] as String);
+      }
+    }
+    return AppPhoto(
+      id: map['id'] as String? ?? '',
+      label: map['label'] as String? ?? '',
+      url: map['url'] as String?,
+      localPath: map['localPath'] as String?,
+      takenAt: takenAt,
+      isFromGooglePhotos: map['isFromGooglePhotos'] as bool? ?? true,
+    );
+  }
+}

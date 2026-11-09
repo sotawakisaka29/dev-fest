@@ -1,0 +1,582 @@
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../core/models/app_photo.dart';
+import '../../core/models/memory_pin.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/google_photos_service.dart';
+import '../../core/services/place_autocomplete_service.dart';
+import '../../core/services/storage_service.dart';
+import '../../core/theme/app_theme.dart';
+import 'location_input/location_input_section.dart';
+import 'photo_picker/photo_picker_section.dart';
+import 'review_input/review_input_section.dart';
+import 'time_range/time_range_section.dart';
+
+/// 記録作成・編集画面（端末アルバム＆Google Photos Picker API並行対応）
+class RecordScreen extends StatefulWidget {
+  const RecordScreen({
+    super.key,
+    required this.teamId,
+    this.activeTripId,
+    this.initialPin,
+  });
+
+  final String teamId;
+  final String? activeTripId;
+  final MemoryPin? initialPin;
+
+  @override
+  State<RecordScreen> createState() => _RecordScreenState();
+}
+
+class _RecordScreenState extends State<RecordScreen>
+    with WidgetsBindingObserver {
+  final TextEditingController _placeController = TextEditingController();
+  final TextEditingController _commentController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
+
+  bool get _isEditing => widget.initialPin != null;
+
+  bool _shareLocation = true;
+  PlaceCandidate? _selectedCandidate;
+  String _selectedAddress = '';
+  String _selectedPrefecture = '';
+  double _selectedLatitude = 35.6812;
+  double _selectedLongitude = 139.7671;
+  Offset _selectedNormalizedPosition = const Offset(0.66, 0.56);
+
+  DateTime _selectedDate = DateTime.now();
+  TimeOfDay _startTime = const TimeOfDay(hour: 12, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 13, minute: 30);
+  int? _rating;
+
+  final List<AppPhoto> _photos = [];
+  bool _isLoadingPhotos = false;
+  String _loadingMessage = 'Googleフォトを起動中...';
+  bool _isUploading = false;
+  String _uploadMessage = '写真をクラウドに保存中...';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final init = widget.initialPin;
+    if (init != null) {
+      _placeController.text = init.placeName;
+      _commentController.text = init.comment;
+      _selectedAddress = init.address;
+      _selectedPrefecture = init.prefecture;
+      _selectedLatitude = init.latitude;
+      _selectedLongitude = init.longitude;
+      _selectedNormalizedPosition = init.mapNormalizedPosition;
+      _rating = init.rating;
+      _shareLocation = init.shareLocation;
+      if (init.recordedDate != null) {
+        _selectedDate = init.recordedDate!;
+      }
+      _photos.addAll(init.photos);
+      _parseInitialTime(init.startTime, isStart: true);
+      _parseInitialTime(init.endTime, isStart: false);
+    }
+  }
+
+  void _parseInitialTime(String timeStr, {required bool isStart}) {
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        final h = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        if (isStart) {
+          _startTime = TimeOfDay(hour: h, minute: m);
+        } else {
+          _endTime = TimeOfDay(hour: h, minute: m);
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _placeController.dispose();
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isLoadingPhotos) {
+      if (mounted) {
+        setState(() {
+          _loadingMessage = '写真の選択結果を確認中...';
+        });
+      }
+    }
+  }
+
+  /// 端末のアルバムまたはカメラから写真を手動追加する（既存機能の維持）
+  Future<void> _handlePickFromGallery() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppTheme.pureWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: AppTheme.darkGrey,
+                ),
+                title: const Text('アルバムから選択（ギャラリー）'),
+                onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppTheme.darkGrey,
+                ),
+                title: const Text('カメラで撮影'),
+                onTap: () => Navigator.of(context).pop(ImageSource.camera),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source == null) return;
+
+    try {
+      if (source == ImageSource.gallery) {
+        // 複数写真選択を試行
+        final pickedFiles = await _imagePicker.pickMultiImage();
+        if (pickedFiles.isNotEmpty && mounted) {
+          setState(() {
+            for (final file in pickedFiles) {
+              _photos.insert(
+                0,
+                AppPhoto(
+                  id: 'local_${DateTime.now().microsecondsSinceEpoch}_${file.name}',
+                  label: file.name.isNotEmpty ? file.name : 'アルバム写真',
+                  localPath: file.path,
+                  takenAt: DateTime.now(),
+                  isFromGooglePhotos: false,
+                ),
+              );
+            }
+          });
+        }
+      } else {
+        // カメラ撮影
+        final pickedFile = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+        );
+        if (pickedFile != null && mounted) {
+          setState(() {
+            _photos.insert(
+              0,
+              AppPhoto(
+                id: 'local_${DateTime.now().microsecondsSinceEpoch}',
+                label: pickedFile.name.isNotEmpty ? pickedFile.name : '撮影写真',
+                localPath: pickedFile.path,
+                takenAt: DateTime.now(),
+                isFromGooglePhotos: false,
+              ),
+            );
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('写真の選択に失敗しました: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Google Photos Picker API を利用して写真を選択する（新規並行機能）
+  Future<void> _handlePickFromGooglePhotos() async {
+    if (_isLoadingPhotos) return; // 多重タップ防止
+
+    if (AuthService.instance.currentUser.isAnonymous) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Googleフォトから選択するにはGoogleアカウントでログインしてください。',
+            style: TextStyle(fontSize: 13),
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent.shade700,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoadingPhotos = true;
+      _loadingMessage = 'Googleフォトを起動中...';
+    });
+
+    try {
+      final result = await GooglePhotosService.instance
+          .pickPhotosFromGooglePhotos(
+            onProgress: (message) {
+              if (mounted) {
+                setState(() {
+                  _loadingMessage = message;
+                });
+              }
+            },
+          );
+
+      if (!mounted) return;
+
+      if (result.isSuccess) {
+        setState(() {
+          // 既存の写真は維持したまま、Googleフォトから新しく選択された写真を追加
+          _photos.addAll(result.photos);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Googleフォトから ${result.photos.length} 枚の写真を追加しました',
+              style: const TextStyle(fontSize: 13),
+            ),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // ユーザーキャンセルやエラー時のフィードバック
+        final isCancel =
+            result.errorType == GooglePhotosErrorType.userCancelled ||
+            result.errorType == GooglePhotosErrorType.noPhotosSelected;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.message ?? '写真の選択を完了できませんでした。',
+              style: const TextStyle(fontSize: 13),
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: isCancel
+                ? AppTheme.darkGrey
+                : Colors.redAccent.shade700,
+            duration: Duration(seconds: isCancel ? 2 : 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('エラーが発生しました: $e'),
+            backgroundColor: Colors.redAccent.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingPhotos = false;
+        });
+      }
+    }
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  Future<void> _handleSave() async {
+    if (_isUploading) return;
+
+    final rawText = _placeController.text.trim();
+    final placeName = !_shareLocation
+        ? '非公開スポット'
+        : (rawText.isEmpty
+              ? (_isEditing ? widget.initialPin!.placeName : '新しい思い出スポット')
+              : rawText);
+
+    // 予測候補が選択されている場合はその候補の住所・都道府県・座標を使用し、
+    // 未選択のまま自由入力された場合は入力文字列から都道府県・住所リンク・座標を解決する
+    final resolved =
+        _selectedCandidate ??
+        PlaceAutocompleteService.instance.resolveFromFreeText(placeName);
+
+    final finalAddress = !_shareLocation
+        ? ''
+        : (_selectedAddress.isNotEmpty ? _selectedAddress : resolved.address);
+    final finalPrefecture = _selectedPrefecture.isNotEmpty
+        ? _selectedPrefecture
+        : resolved.prefecture;
+    final finalLatitude = _selectedCandidate != null
+        ? _selectedLatitude
+        : resolved.latitude;
+    final finalLongitude = _selectedCandidate != null
+        ? _selectedLongitude
+        : resolved.longitude;
+    final finalNormalizedPosition = _selectedCandidate != null
+        ? _selectedNormalizedPosition
+        : resolved.normalizedPosition;
+
+    setState(() {
+      _isUploading = true;
+      _uploadMessage = '写真をクラウドにアップロード中...';
+    });
+
+    List<AppPhoto> finalPhotos = List<AppPhoto>.from(_photos);
+    try {
+      finalPhotos = await StorageService.instance.uploadPhotos(
+        groupId: widget.teamId,
+        photos: _photos,
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _uploadMessage = '写真をクラウドに保存中 ($current/$total)...';
+            });
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Photo upload error during save: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+
+    if (!mounted) return;
+
+    final MemoryPin pinToReturn;
+    if (_isEditing) {
+      pinToReturn = widget.initialPin!.copyWith(
+        placeName: placeName,
+        address: finalAddress,
+        prefecture: finalPrefecture,
+        latitude: finalLatitude,
+        longitude: finalLongitude,
+        mapNormalizedPosition: finalNormalizedPosition,
+        startTime: _formatTime(_startTime),
+        endTime: _formatTime(_endTime),
+        rating: !_shareLocation ? null : _rating,
+        comment: _commentController.text.trim().isEmpty
+            ? 'とても良い時間を過ごせました。'
+            : _commentController.text.trim(),
+        photoLabels: finalPhotos.map((p) => p.label).toList(),
+        photos: finalPhotos,
+        recordedDate: _selectedDate,
+        shareLocation: _shareLocation,
+      );
+    } else {
+      pinToReturn = MemoryPin(
+        id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
+        teamId: widget.teamId,
+        placeName: placeName,
+        address: finalAddress,
+        prefecture: finalPrefecture,
+        latitude: finalLatitude,
+        longitude: finalLongitude,
+        mapNormalizedPosition: finalNormalizedPosition,
+        startTime: _formatTime(_startTime),
+        endTime: _formatTime(_endTime),
+        rating: !_shareLocation ? null : _rating,
+        comment: _commentController.text.trim().isEmpty
+            ? 'とても良い時間を過ごせました。'
+            : _commentController.text.trim(),
+        photoLabels: finalPhotos.map((p) => p.label).toList(),
+        photos: finalPhotos,
+        recordedDate: _selectedDate,
+        tripId: widget.activeTripId,
+        shareLocation: _shareLocation,
+      );
+    }
+
+    Navigator.of(context).pop(pinToReturn);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: Text(
+          _isEditing ? '記録を編集' : '記録',
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.darkGrey,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: '戻る',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back, color: AppTheme.darkGrey),
+          ),
+          IconButton(
+            tooltip: _isEditing ? '変更を保存' : '保存する',
+            onPressed: _handleSave,
+            icon: const Icon(Icons.check, color: AppTheme.darkGrey),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LocationInputSection(
+                    shareLocation: _shareLocation,
+                    placeController: _placeController,
+                    selectedAddress: _selectedAddress,
+                    selectedPrefecture: _selectedPrefecture,
+                    selectedLatitude: _selectedLatitude,
+                    selectedLongitude: _selectedLongitude,
+                    onShareLocationChanged: (value) {
+                      setState(() => _shareLocation = value);
+                    },
+                    onPlaceTextChanged: (text) {
+                      final resolved = PlaceAutocompleteService.instance
+                          .resolveFromFreeText(text);
+                      setState(() {
+                        _selectedCandidate = null;
+                        if (text.trim().isEmpty) {
+                          _selectedAddress = '';
+                          _selectedPrefecture = '';
+                        } else {
+                          _selectedAddress = resolved.address;
+                          _selectedPrefecture = resolved.prefecture;
+                          _selectedLatitude = resolved.latitude;
+                          _selectedLongitude = resolved.longitude;
+                          _selectedNormalizedPosition =
+                              resolved.normalizedPosition;
+                        }
+                      });
+                    },
+                    onCandidateSelected: (candidate) {
+                      setState(() {
+                        _selectedCandidate = candidate;
+                        _placeController.text = candidate.name;
+                        _selectedAddress = candidate.address;
+                        _selectedPrefecture = candidate.prefecture;
+                        _selectedLatitude = candidate.latitude;
+                        _selectedLongitude = candidate.longitude;
+                        _selectedNormalizedPosition =
+                            candidate.normalizedPosition;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  // 日時帯の選択セクション（訪問記録メタデータとして維持）
+                  TimeRangeSection(
+                    selectedDate: _selectedDate,
+                    startTime: _startTime,
+                    endTime: _endTime,
+                    isLoadingPhotos: false,
+                    onDateChanged: (date) {
+                      setState(() => _selectedDate = date);
+                    },
+                    onStartTimeChanged: (time) {
+                      setState(() => _startTime = time);
+                    },
+                    onEndTimeChanged: (time) {
+                      setState(() => _endTime = time);
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  // 「しない」選択時は星評価のみ非表示にし、口コミ入力欄は常に表示する
+                  ReviewInputSection(
+                    rating: _rating,
+                    showRating: _shareLocation,
+                    commentController: _commentController,
+                    onRatingChanged: (value) => setState(() => _rating = value),
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  // 写真セクション（端末アルバム選択 ＆ Google Photos Picker API並行対応）
+                  PhotoPickerSection(
+                    photos: _photos,
+                    isLoading: _isLoadingPhotos,
+                    loadingMessage: _loadingMessage,
+                    onAddFromGallery: _handlePickFromGallery,
+                    onPickFromGooglePhotos: _handlePickFromGooglePhotos,
+                    onRemovePhotoAt: (index) {
+                      setState(() {
+                        _photos.removeAt(index);
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_isUploading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.45),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.pureWhite,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(
+                          color: AppTheme.darkGrey,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _uploadMessage,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.darkGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
