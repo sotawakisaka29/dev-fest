@@ -60,26 +60,6 @@ class TripMemory {
   final List<RoutePoint> routePoints;
   final double? customDistanceKm;
 
-  TripMemory copyWith({
-    String? id,
-    String? teamId,
-    String? title,
-    DateTime? startDate,
-    DateTime? endDate,
-    List<MemoryPin>? pins,
-    double? customDistanceKm,
-  }) {
-    return TripMemory(
-      id: id ?? this.id,
-      teamId: teamId ?? this.teamId,
-      title: title ?? this.title,
-      startDate: startDate ?? this.startDate,
-      endDate: endDate ?? this.endDate,
-      pins: pins ?? this.pins,
-      customDistanceKm: customDistanceKm ?? this.customDistanceKm,
-    );
-  }
-
   /// 「0月0日 〜 0月0日」形式の期間テキスト
   String get formattedDateRange {
     return '${startDate.month}月${startDate.day}日 〜 ${endDate.month}月${endDate.day}日';
@@ -216,14 +196,17 @@ class TripMemory {
 
   factory TripMemory.fromFirestore(String id, Map<String, dynamic> data) {
     final rawPins = data['pins'] as List<dynamic>? ?? const [];
-    final parsedPins = rawPins.map((m) {
-      if (m is Map) {
-        final stringKeyMap = Map<String, dynamic>.from(m);
-        final pinId = stringKeyMap['id'] as String? ?? 'pin_${m.hashCode}';
-        return MemoryPin.fromFirestore(pinId, stringKeyMap);
-      }
-      return null;
-    }).whereType<MemoryPin>().toList();
+    final parsedPins = rawPins
+        .map((m) {
+          if (m is Map) {
+            final stringKeyMap = Map<String, dynamic>.from(m);
+            final pinId = stringKeyMap['id'] as String? ?? 'pin_${m.hashCode}';
+            return MemoryPin.fromFirestore(pinId, stringKeyMap);
+          }
+          return null;
+        })
+        .whereType<MemoryPin>()
+        .toList();
 
     final rawRoutePoints = data['routePoints'] as List<dynamic>? ?? const [];
     final parsedRoutePoints = rawRoutePoints

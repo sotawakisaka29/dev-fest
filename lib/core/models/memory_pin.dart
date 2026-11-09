@@ -190,22 +190,26 @@ class MemoryPin {
             .toList() ??
         <String>[];
     final rawPhotos = data['photos'] as List<dynamic>? ?? const [];
-    final parsedPhotos = rawPhotos.map((m) {
-      if (m is Map) {
-        final stringKeyMap = Map<String, dynamic>.from(m);
-        return AppPhoto(
-          id: stringKeyMap['id'] as String? ?? '',
-          label: stringKeyMap['label'] as String? ?? '',
-          url: stringKeyMap['url'] as String?,
-          localPath: stringKeyMap['localPath'] as String?,
-          takenAt: stringKeyMap['takenAt'] is String
-              ? DateTime.tryParse(stringKeyMap['takenAt'] as String)
-              : null,
-          isFromGooglePhotos: stringKeyMap['isFromGooglePhotos'] as bool? ?? true,
-        );
-      }
-      return null;
-    }).whereType<AppPhoto>().toList();
+    final parsedPhotos = rawPhotos
+        .map((m) {
+          if (m is Map) {
+            final stringKeyMap = Map<String, dynamic>.from(m);
+            return AppPhoto(
+              id: stringKeyMap['id'] as String? ?? '',
+              label: stringKeyMap['label'] as String? ?? '',
+              url: stringKeyMap['url'] as String?,
+              localPath: stringKeyMap['localPath'] as String?,
+              takenAt: stringKeyMap['takenAt'] is String
+                  ? DateTime.tryParse(stringKeyMap['takenAt'] as String)
+                  : null,
+              isFromGooglePhotos:
+                  stringKeyMap['isFromGooglePhotos'] as bool? ?? true,
+            );
+          }
+          return null;
+        })
+        .whereType<AppPhoto>()
+        .toList();
 
     return MemoryPin(
       id: id,
@@ -232,6 +236,68 @@ class MemoryPin {
       shareLocation: data['shareLocation'] as bool? ?? true,
       isRouteWaypointOnly: data['isRouteWaypointOnly'] as bool? ?? false,
     );
+  }
+
+  /// このピンが指定された開始日時〜終了日時の範囲内に該当するかどうかを判定する
+  bool matchesTimeWindow(DateTime windowStart, DateTime windowEnd) {
+    final pinRange = resolvedTimeRange;
+    if (pinRange != null) {
+      // ピンの滞在時間帯と指定期間が少しでも重なっていれば一致とみなす
+      final overlaps =
+          !pinRange.$2.isBefore(windowStart) && !pinRange.$1.isAfter(windowEnd);
+      if (overlaps) return true;
+    }
+
+    // 写真の撮影日時（takenAt）が指定期間内にある場合も一致とみなす
+    for (final photo in photos) {
+      final taken = photo.takenAt;
+      if (taken != null &&
+          !taken.isBefore(windowStart) &&
+          !taken.isAfter(windowEnd)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// `recordedDate` と `startTime` / `endTime` から実日時の範囲 `(startDateTime, endDateTime)` を算出する
+  (DateTime, DateTime)? get resolvedTimeRange {
+    final baseDate = recordedDate;
+    if (baseDate == null) return null;
+
+    final startParts = _parseHourMinute(startTime);
+    final endParts = _parseHourMinute(endTime);
+
+    final startDt = DateTime(
+      baseDate.year,
+      baseDate.month,
+      baseDate.day,
+      startParts.$1,
+      startParts.$2,
+    );
+
+    var endDt = DateTime(
+      baseDate.year,
+      baseDate.month,
+      baseDate.day,
+      endParts.$1,
+      endParts.$2,
+    );
+    // 終了時刻が開始時刻より前の場合（宿泊など日跨ぎ）は翌日扱いにする
+    if (endDt.isBefore(startDt)) {
+      endDt = endDt.add(const Duration(days: 1));
+    }
+    return (startDt, endDt);
+  }
+
+  static (int, int) _parseHourMinute(String text) {
+    final parts = text.split(':');
+    if (parts.length >= 2) {
+      final h = int.tryParse(parts[0].trim()) ?? 0;
+      final m = int.tryParse(parts[1].trim()) ?? 0;
+      return (h.clamp(0, 23), m.clamp(0, 59));
+    }
+    return (12, 0);
   }
 
   /// 初期サンプルピンリスト（シードデータなし）

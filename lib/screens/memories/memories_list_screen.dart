@@ -60,7 +60,6 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
     }
   }
 
-  void _handleDelete(TripMemory memory, Set<String> pinIdsToDelete) {
   @override
   void didUpdateWidget(covariant MemoriesListScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -71,7 +70,7 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
     }
   }
 
-  void _handleDelete(TripMemory memory) {
+  void _handleDelete(TripMemory memory, Set<String> pinIdsToDelete) {
     setState(() {
       _items.removeWhere((m) => m.id == memory.id);
     });
