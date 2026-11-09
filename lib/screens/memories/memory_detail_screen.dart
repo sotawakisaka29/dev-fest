@@ -63,6 +63,8 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     _tripSubscription?.cancel();
     if (_currentMemory.teamId.isEmpty) return;
 
+    TripService.instance.refreshGroupData(_currentMemory.teamId);
+
     _tripSubscription = TripService.instance
         .watchTrips(_currentMemory.teamId)
         .listen((trips) {

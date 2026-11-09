@@ -262,5 +262,67 @@ void main() {
       expect(updatedTrip.pins.any((p) => p.id == 'pin_friend_izu'), isTrue);
       expect(updatedTrip.pins.first.placeName, '熱海プリン');
     });
+
+    test(
+      'サブコレクション内のドキュメントの teamId が空または別IDでも親 groupId に正規化され件数が一致すること',
+      () async {
+        const parentGroupId = 'group_actual_parent';
+        final rawFirestoreData = <String, dynamic>{
+          'teamId': 'daily_wrong_id',
+          'title': '別IDで保存されていた思い出',
+          'startDate': '2026-11-09T09:00:00.000',
+          'endDate': '2026-11-09T18:00:00.000',
+          'pins': [
+            {'id': 'pin_sub_1', 'teamId': '', 'placeName': '箱根神社'},
+          ],
+        };
+
+        final restored = TripMemory.fromFirestore(
+          'trip_legacy_1',
+          rawFirestoreData,
+          fallbackTeamId: parentGroupId,
+        );
+
+        expect(restored.teamId, parentGroupId);
+        expect(restored.pins.first.teamId, parentGroupId);
+      },
+    );
+
+    test('refreshGroupData / fetchTrips により思い出を開くたびに最新件数が同期されること', () async {
+      const groupId = 'test_group_refresh_count';
+      tripService.resetForTest();
+
+      final t1 = TripMemory(
+        id: 't1',
+        teamId: groupId,
+        title: '思い出1',
+        startDate: DateTime(2026, 11, 1),
+        endDate: DateTime(2026, 11, 1),
+        pins: const [],
+      );
+      final t2 = TripMemory(
+        id: 't2',
+        teamId: groupId,
+        title: '思い出2',
+        startDate: DateTime(2026, 11, 2),
+        endDate: DateTime(2026, 11, 2),
+        pins: const [],
+      );
+
+      await tripService.saveTrip(t1);
+      await tripService.saveTrip(t2);
+
+      final fetched = await tripService.fetchTrips(groupId);
+      expect(fetched.length, 2);
+
+      // 削除後に fetchTrips を呼ぶと1件になり、さらに全削除すると0件になること
+      await tripService.deleteTrip(groupId, 't1');
+      final afterDelete1 = await tripService.fetchTrips(groupId);
+      expect(afterDelete1.length, 1);
+
+      await tripService.deleteTrip(groupId, 't2');
+      final afterDeleteAll = await tripService.fetchTrips(groupId);
+      expect(afterDeleteAll, isEmpty);
+    });
   });
 }

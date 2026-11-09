@@ -76,10 +76,22 @@ class _MapScreenState extends State<MapScreen> {
     _authSubscription = _authService.authStateChanges.listen((user) {
       if (mounted) {
         setState(() => _currentUser = user);
+        _resetGroupDataSubscriptions();
         _subscribeToGroups(user.uid);
       }
     });
     _subscribeToGroups(_currentUser.uid);
+  }
+
+  void _resetGroupDataSubscriptions() {
+    for (final sub in _pinsSubscriptions.values) {
+      sub.cancel();
+    }
+    _pinsSubscriptions.clear();
+    for (final sub in _tripsSubscriptions.values) {
+      sub.cancel();
+    }
+    _tripsSubscriptions.clear();
   }
 
   void _subscribeToGroups(String uid) {
@@ -106,6 +118,9 @@ class _MapScreenState extends State<MapScreen> {
         _selectedTeam = nextSelected;
       });
       _syncGroupSubscriptions();
+      for (final group in newGroups) {
+        _tripService.refreshGroupData(group.id);
+      }
     });
   }
 
@@ -182,6 +197,13 @@ class _MapScreenState extends State<MapScreen> {
 
   void _subscribeToTripsAndPins(String groupId) {
     _syncGroupSubscriptions(groupId);
+    if (_selectedTeam.isPersonal) {
+      for (final team in _teams) {
+        _tripService.refreshGroupData(team.id);
+      }
+    } else {
+      _tripService.refreshGroupData(groupId);
+    }
   }
 
   @override
@@ -447,6 +469,11 @@ class _MapScreenState extends State<MapScreen> {
     final watchedTeamIds = _selectedTeam.isPersonal
         ? _teams.map((t) => t.id).toList()
         : <String>[_selectedTeam.id];
+
+    // 思い出画面を開くたびにDBから最新データを非同期取得してストリーム・画面へ反映
+    for (final gid in watchedTeamIds) {
+      _tripService.refreshGroupData(gid);
+    }
 
     final jumpedPin = await Navigator.of(context).push<MemoryPin>(
       MaterialPageRoute(

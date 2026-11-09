@@ -54,6 +54,136 @@ class TripService {
     );
   }
 
+  MemoryPin? _safeParsePin(
+    String docId,
+    Map<String, dynamic> data,
+    String groupId,
+  ) {
+    try {
+      return MemoryPin.fromFirestore(docId, data, fallbackTeamId: groupId);
+    } catch (e) {
+      debugPrint('Failed to parse MemoryPin ($docId) in $groupId: $e');
+      return null;
+    }
+  }
+
+  TripMemory? _safeParseTrip(
+    String docId,
+    Map<String, dynamic> data,
+    String groupId,
+  ) {
+    // 共有スナップショット用ドキュメント（sh_*）は思い出一覧の対象から除外
+    if (docId.startsWith('sh_') || data.containsKey('shareId')) {
+      return null;
+    }
+    try {
+      return TripMemory.fromFirestore(docId, data, fallbackTeamId: groupId);
+    } catch (e) {
+      debugPrint('Failed to parse TripMemory ($docId) in $groupId: $e');
+      return null;
+    }
+  }
+
+  /// Firestore から指定グループの最新ピン一覧を明示的に取得（DBアクセス）して同期する
+  Future<List<MemoryPin>> fetchPins(String groupId) async {
+    final db = _firestore;
+    if (db == null) {
+      final local = List<MemoryPin>.unmodifiable(
+        _localPins[groupId] ?? const [],
+      );
+      _getPinsController(groupId).add(local);
+      return local;
+    }
+
+    try {
+      final snapshot = await db
+          .collection('groups')
+          .doc(groupId)
+          .collection('pins')
+          .get();
+      final pins = snapshot.docs
+          .map((doc) => _safeParsePin(doc.id, doc.data(), groupId))
+          .whereType<MemoryPin>()
+          .toList();
+      _localPins[groupId] = pins;
+      final unmodifiable = List<MemoryPin>.unmodifiable(pins);
+      _getPinsController(groupId).add(unmodifiable);
+      return unmodifiable;
+    } catch (e) {
+      debugPrint('Firestore fetchPins error for $groupId: $e');
+      return List<MemoryPin>.unmodifiable(_localPins[groupId] ?? const []);
+    }
+  }
+
+  /// Firestore から指定グループの最新思い出（trips & memories）およびピンを明示的に取得（DBアクセス）して同期する
+  Future<List<TripMemory>> fetchTrips(String groupId) async {
+    final db = _firestore;
+    if (db == null) {
+      final localPins = _localPins[groupId] ?? const [];
+      final localTrips = _mergePinsIntoTrips(
+        List<TripMemory>.from(_localTrips[groupId] ?? const []),
+        localPins,
+      );
+      _localTrips[groupId] = localTrips;
+      final unmodifiable = List<TripMemory>.unmodifiable(localTrips);
+      _getTripsController(groupId).add(unmodifiable);
+      return unmodifiable;
+    }
+
+    try {
+      final results = await Future.wait([
+        db.collection('groups').doc(groupId).collection('trips').get(),
+        db.collection('groups').doc(groupId).collection('memories').get(),
+        db.collection('groups').doc(groupId).collection('pins').get(),
+      ]);
+
+      final tripsSnap = results[0];
+      final memoriesSnap = results[1];
+      final pinsSnap = results[2];
+
+      final latestPins = pinsSnap.docs
+          .map((doc) => _safeParsePin(doc.id, doc.data(), groupId))
+          .whereType<MemoryPin>()
+          .toList();
+      _localPins[groupId] = latestPins;
+      _getPinsController(groupId).add(List<MemoryPin>.unmodifiable(latestPins));
+
+      final Map<String, TripMemory> mergedMap = {};
+      for (final doc in memoriesSnap.docs) {
+        final parsed = _safeParseTrip(doc.id, doc.data(), groupId);
+        if (parsed != null) {
+          mergedMap[doc.id] = parsed;
+        }
+      }
+      for (final doc in tripsSnap.docs) {
+        final parsed = _safeParseTrip(doc.id, doc.data(), groupId);
+        if (parsed != null) {
+          mergedMap[doc.id] = parsed;
+        }
+      }
+
+      final combinedList = _mergePinsIntoTrips(
+        mergedMap.values.toList(),
+        latestPins,
+      );
+      combinedList.sort((a, b) => b.startDate.compareTo(a.startDate));
+
+      _localTrips[groupId] = combinedList;
+      final unmodifiable = List<TripMemory>.unmodifiable(combinedList);
+      _getTripsController(groupId).add(unmodifiable);
+      return unmodifiable;
+    } catch (e) {
+      debugPrint('Firestore fetchTrips error for $groupId: $e');
+      return List<TripMemory>.unmodifiable(_localTrips[groupId] ?? const []);
+    }
+  }
+
+  /// 指定グループの思い出・ピンを両方DBから最新取得してストリーム購読者全員へ即時反映する
+  Future<void> refreshGroupData(String groupId) async {
+    if (groupId.isEmpty) return;
+    await fetchTrips(groupId);
+  }
+
   /// グループに紐づくピン一覧のリアルタイムストリーム
   Stream<List<MemoryPin>> watchPins(String groupId) {
     final db = _firestore;
@@ -73,29 +203,63 @@ class TripService {
       return controller.stream;
     }
 
-    try {
-      return db
-          .collection('groups')
-          .doc(groupId)
-          .collection('pins')
-          .snapshots()
-          .map((snapshot) {
-            final pins = snapshot.docs.map((doc) {
-              return MemoryPin.fromFirestore(doc.id, doc.data());
-            }).toList();
-            _localPins[groupId] = pins;
-            return List<MemoryPin>.unmodifiable(pins);
-          })
-          .handleError((error) {
-            debugPrint(
-              'Firestore watchPins error: $error. Falling back to local.',
-            );
-            return fallbackList;
-          });
-    } catch (e) {
-      debugPrint('Firestore watchPins stream error: $e');
-      return Stream.value(fallbackList);
-    }
+    late final StreamController<List<MemoryPin>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? firestoreSub;
+    StreamSubscription<List<MemoryPin>>? localBusSub;
+
+    controller = StreamController<List<MemoryPin>>.broadcast(
+      onListen: () {
+        // まず現在キャッシュされている値があれば即座に通知
+        if (_localPins.containsKey(groupId) && !controller.isClosed) {
+          controller.add(List<MemoryPin>.unmodifiable(_localPins[groupId]!));
+        }
+
+        localBusSub = _getPinsController(groupId).stream.listen((pins) {
+          if (!controller.isClosed) {
+            controller.add(List<MemoryPin>.unmodifiable(pins));
+          }
+        });
+
+        try {
+          firestoreSub = db
+              .collection('groups')
+              .doc(groupId)
+              .collection('pins')
+              .snapshots()
+              .listen(
+                (snapshot) {
+                  final pins = snapshot.docs
+                      .map((doc) => _safeParsePin(doc.id, doc.data(), groupId))
+                      .whereType<MemoryPin>()
+                      .toList();
+                  _localPins[groupId] = pins;
+                  if (!controller.isClosed) {
+                    controller.add(List<MemoryPin>.unmodifiable(pins));
+                  }
+                },
+                onError: (Object error) {
+                  debugPrint(
+                    'Firestore watchPins error: $error. Falling back to local.',
+                  );
+                  if (!controller.isClosed) {
+                    controller.add(_localPins[groupId] ?? fallbackList);
+                  }
+                },
+              );
+        } catch (e) {
+          debugPrint('Firestore watchPins stream error: $e');
+          if (!controller.isClosed) {
+            controller.add(fallbackList);
+          }
+        }
+      },
+      onCancel: () async {
+        await firestoreSub?.cancel();
+        await localBusSub?.cancel();
+      },
+    );
+
+    return controller.stream;
   }
 
   /// 旅行まとめ内のピン一覧に、最新のピン情報（同IDの更新、またはtripId一致・期間一致のピン）をマージする
@@ -134,7 +298,7 @@ class TripService {
   /// グループに紐づく旅行一覧のリアルタイムストリーム
   ///
   /// `/groups/{groupId}/trips` と旧 `/groups/{groupId}/memories` の両方を監視・統合し、
-  /// さらに `/groups/{groupId}/pins` の最新ピン情報ともリアルタイムに同期する。
+  /// さらに `/groups/{groupId}/pins` の最新ピン情報および `fetchTrips` による明示的DB取得結果とも同期する。
   Stream<List<TripMemory>> watchTrips(String groupId) {
     final db = _firestore;
     final fallbackList = List<TripMemory>.unmodifiable(
@@ -155,13 +319,13 @@ class TripService {
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? tripsSub;
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? memoriesSub;
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? pinsSub;
+    StreamSubscription<List<TripMemory>>? localBusSub;
 
     List<TripMemory> latestTripsDocs = const [];
     List<TripMemory> latestMemoriesDocs = const [];
     List<MemoryPin> latestPinsDocs = _localPins[groupId] ?? const [];
     bool hasReceivedTrips = false;
     bool hasReceivedMemories = false;
-    final Set<String> migratedMemoryIds = {};
 
     void emitMerged() {
       if (controller.isClosed) return;
@@ -177,26 +341,6 @@ class TripService {
         mergedMap[t.id] = t;
       }
 
-      // 旧 memories にのみ存在するドキュメントがあれば trips コレクションへ自動移行
-      if (hasReceivedTrips && hasReceivedMemories) {
-        final tripIds = latestTripsDocs.map((t) => t.id).toSet();
-        for (final legacyMemory in latestMemoriesDocs) {
-          if (!tripIds.contains(legacyMemory.id) &&
-              !migratedMemoryIds.contains(legacyMemory.id)) {
-            migratedMemoryIds.add(legacyMemory.id);
-            db
-                .collection('groups')
-                .doc(groupId)
-                .collection('trips')
-                .doc(legacyMemory.id)
-                .set(legacyMemory.toFirestore(), SetOptions(merge: true))
-                .catchError((Object e) {
-                  debugPrint('Legacy memory migration error: $e');
-                });
-          }
-        }
-      }
-
       final combinedList = _mergePinsIntoTrips(
         mergedMap.values.toList(),
         latestPinsDocs,
@@ -209,6 +353,16 @@ class TripService {
 
     controller = StreamController<List<TripMemory>>.broadcast(
       onListen: () {
+        if (_localTrips.containsKey(groupId) && !controller.isClosed) {
+          controller.add(List<TripMemory>.unmodifiable(_localTrips[groupId]!));
+        }
+
+        localBusSub = _getTripsController(groupId).stream.listen((trips) {
+          if (!controller.isClosed) {
+            controller.add(List<TripMemory>.unmodifiable(trips));
+          }
+        });
+
         try {
           tripsSub = db
               .collection('groups')
@@ -219,9 +373,8 @@ class TripService {
                 (snapshot) {
                   hasReceivedTrips = true;
                   latestTripsDocs = snapshot.docs
-                      .map(
-                        (doc) => TripMemory.fromFirestore(doc.id, doc.data()),
-                      )
+                      .map((doc) => _safeParseTrip(doc.id, doc.data(), groupId))
+                      .whereType<TripMemory>()
                       .toList();
                   emitMerged();
                 },
@@ -242,9 +395,8 @@ class TripService {
                 (snapshot) {
                   hasReceivedMemories = true;
                   latestMemoriesDocs = snapshot.docs
-                      .map(
-                        (doc) => TripMemory.fromFirestore(doc.id, doc.data()),
-                      )
+                      .map((doc) => _safeParseTrip(doc.id, doc.data(), groupId))
+                      .whereType<TripMemory>()
                       .toList();
                   emitMerged();
                 },
@@ -261,7 +413,8 @@ class TripService {
               .listen(
                 (snapshot) {
                   latestPinsDocs = snapshot.docs
-                      .map((doc) => MemoryPin.fromFirestore(doc.id, doc.data()))
+                      .map((doc) => _safeParsePin(doc.id, doc.data(), groupId))
+                      .whereType<MemoryPin>()
                       .toList();
                   _localPins[groupId] = latestPinsDocs;
                   emitMerged();
@@ -281,6 +434,7 @@ class TripService {
         await tripsSub?.cancel();
         await memoriesSub?.cancel();
         await pinsSub?.cancel();
+        await localBusSub?.cancel();
       },
     );
 
@@ -349,8 +503,8 @@ class TripService {
               .collection(colName)
               .get();
           for (final doc in allTripsSnapshot.docs) {
-            final data = doc.data();
-            final trip = TripMemory.fromFirestore(doc.id, data);
+            final trip = _safeParseTrip(doc.id, doc.data(), pin.teamId);
+            if (trip == null) continue;
             final containsPin = trip.pins.any((p) => p.id == pin.id);
             final matchesWindow =
                 pin.tripId == null &&
@@ -364,13 +518,10 @@ class TripService {
                 updatedPins.add(pin);
               }
               final updatedTrip = trip.copyWith(pins: updatedPins);
-              // 標準の trips コレクションへ保存（旧 memories だった場合も trips へ昇格保存）
-              await db
-                  .collection('groups')
-                  .doc(pin.teamId)
-                  .collection('trips')
-                  .doc(doc.id)
-                  .set(updatedTrip.toFirestore(), SetOptions(merge: true));
+              await doc.reference.set(
+                updatedTrip.toFirestore(),
+                SetOptions(merge: true),
+              );
             }
           }
         } catch (e) {
@@ -428,7 +579,8 @@ class TripService {
               .collection(colName)
               .get();
           for (final doc in snapshot.docs) {
-            final trip = TripMemory.fromFirestore(doc.id, doc.data());
+            final trip = _safeParseTrip(doc.id, doc.data(), groupId);
+            if (trip == null) continue;
             if (trip.pins.any((p) => p.id == pinId)) {
               final updatedPins = trip.pins
                   .where((p) => p.id != pinId)
@@ -529,12 +681,15 @@ class TripService {
     if (db == null) return;
 
     try {
-      await db
+      final tripDoc = await db
           .collection('groups')
           .doc(groupId)
           .collection('trips')
           .doc(tripId)
-          .set({'title': newTitle}, SetOptions(merge: true));
+          .get();
+      if (tripDoc.exists) {
+        await tripDoc.reference.update({'title': newTitle});
+      }
 
       // 旧 memories コレクションに存在する場合もタイトルを更新
       final legacyDoc = await db

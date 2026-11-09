@@ -130,20 +130,9 @@ class ShareService {
       includeDataUrls: false,
     );
 
-    // 2. Firestore への共有スナップショット保存（グループ配下 memories およびトップレベル shares）
+    // 2. Firestore トップレベル shares コレクションへの共有スナップショット保存
     final db = _firestore;
     if (db != null) {
-      try {
-        await db
-            .collection('groups')
-            .doc(memory.teamId)
-            .collection('memories')
-            .doc(shareId)
-            .set(firestorePayload, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('Firestore groups/memories share save warning: $e');
-      }
-
       try {
         await db
             .collection('shares')
