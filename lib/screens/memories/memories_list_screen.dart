@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/models/app_photo.dart';
 import '../../core/models/memory_pin.dart';
 import '../../core/models/trip_memory.dart';
+import '../../core/services/trip_service.dart';
 import '../../core/theme/app_theme.dart';
 import 'create_memory_screen.dart';
 import 'memory_detail_screen.dart';
@@ -20,6 +22,7 @@ class MemoriesListScreen extends StatefulWidget {
     required this.availablePins,
     required this.onDeleteMemory,
     required this.onCreateMemory,
+    this.watchedTeamIds,
     this.onDeleteSinglePin,
     this.initialSelectedMemory,
     this.onUpdateTripTitle,
@@ -29,6 +32,7 @@ class MemoriesListScreen extends StatefulWidget {
 
   final String teamName;
   final String teamId;
+  final List<String>? watchedTeamIds;
   final List<TripMemory> memories;
   final List<MemoryPin> availablePins;
   final void Function(String memoryId, Set<String> pinIdsToDelete)
@@ -46,10 +50,17 @@ class MemoriesListScreen extends StatefulWidget {
 
 class _MemoriesListScreenState extends State<MemoriesListScreen> {
   late List<TripMemory> _items = List<TripMemory>.from(widget.memories);
+  late final List<MemoryPin> _availablePins = List<MemoryPin>.from(
+    widget.availablePins,
+  );
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  final Set<String> _syncedTripGroups = {};
+  final Set<String> _syncedPinGroups = {};
 
   @override
   void initState() {
     super.initState();
+    _subscribeRealtimeUpdates();
     final initial = widget.initialSelectedMemory;
     if (initial != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,6 +71,67 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
     }
   }
 
+  void _subscribeRealtimeUpdates() {
+    for (final sub in _subscriptions) {
+      sub.cancel();
+    }
+    _subscriptions.clear();
+
+    final groupIds = <String>{
+      widget.teamId,
+      ...?widget.watchedTeamIds,
+      ...widget.memories.map((m) => m.teamId),
+      ...widget.availablePins.map((p) => p.teamId),
+    }..removeWhere((id) => id.isEmpty);
+
+    for (final groupId in groupIds) {
+      _subscriptions.add(
+        TripService.instance.watchTrips(groupId).listen((trips) {
+          if (!mounted) return;
+          if (trips.isEmpty && !_syncedTripGroups.contains(groupId)) {
+            return;
+          }
+          _syncedTripGroups.add(groupId);
+          setState(() {
+            _items.removeWhere((m) => m.teamId == groupId);
+            // 他のグループに同名IDがない場合に追加し、開始日降順に並べる
+            for (final trip in trips) {
+              final existingIdx = _items.indexWhere((m) => m.id == trip.id);
+              if (existingIdx >= 0) {
+                _items[existingIdx] = trip;
+              } else {
+                _items.add(trip);
+              }
+            }
+          });
+        }),
+      );
+
+      _subscriptions.add(
+        TripService.instance.watchPins(groupId).listen((pins) {
+          if (!mounted) return;
+          if (pins.isEmpty && !_syncedPinGroups.contains(groupId)) {
+            return;
+          }
+          _syncedPinGroups.add(groupId);
+          setState(() {
+            _availablePins.removeWhere((p) => p.teamId == groupId);
+            _availablePins.addAll(pins);
+          });
+        }),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final sub in _subscriptions) {
+      sub.cancel();
+    }
+    _subscriptions.clear();
+    super.dispose();
+  }
+
   @override
   void didUpdateWidget(covariant MemoriesListScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -68,11 +140,18 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
         _items = List<TripMemory>.from(widget.memories);
       });
     }
+    if (widget.teamId != oldWidget.teamId) {
+      _subscribeRealtimeUpdates();
+    }
   }
 
   void _handleDelete(TripMemory memory, Set<String> pinIdsToDelete) {
+    _syncedTripGroups.add(memory.teamId);
     setState(() {
       _items.removeWhere((m) => m.id == memory.id);
+      if (pinIdsToDelete.isNotEmpty) {
+        _availablePins.removeWhere((p) => pinIdsToDelete.contains(p.id));
+      }
     });
     widget.onDeleteMemory(memory.id, pinIdsToDelete);
   }
@@ -83,13 +162,15 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
       MaterialPageRoute(
         builder: (_) => CreateMemoryScreen(
           teamId: widget.teamId,
-          availablePins: widget.availablePins,
+          availablePins: _availablePins,
         ),
       ),
     );
 
     if (created != null && mounted) {
+      _syncedTripGroups.add(created.teamId);
       setState(() {
+        _items.removeWhere((m) => m.id == created.id);
         _items.insert(0, created);
       });
       widget.onCreateMemory(created);

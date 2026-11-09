@@ -732,4 +732,75 @@ void main() {
       '渋谷区',
     );
   });
+
+  testWidgets('グループの思い出一覧・詳細画面で友人が追加した思い出やスポットがリアルタイム反映されること', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    AuthService.instance.resetToInitialGate();
+    TripService.instance.resetForTest();
+
+    await tester.pumpWidget(const MyMapApp());
+    await tester.tap(find.text('ゲストとして参加'));
+    await tester.pumpAndSettle();
+
+    // グループ「箱根・伊豆温泉旅」に切り替え
+    await tester.tap(find.text('MyMap'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('箱根・伊豆温泉旅'));
+    await tester.pumpAndSettle();
+
+    // 思い出一覧を開く（初期状態は空）
+    await tester.tap(find.text('思い出'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('まだ思い出がありません'), findsOneWidget);
+
+    // 1. 思い出一覧を開いている最中に、友人が新しい思い出をグループに追加した場合
+    final friendTrip = TripMemory(
+      id: 'trip_hakone_friend_1',
+      teamId: 'hakone_trip',
+      title: '友人が作成した箱根旅行記',
+      startDate: DateTime(2026, 11, 8, 9, 0),
+      endDate: DateTime(2026, 11, 8, 20, 0),
+      pins: const [],
+    );
+    await TripService.instance.saveTrip(friendTrip);
+    await tester.pumpAndSettle();
+
+    // 画面を閉じなくても思い出一覧に即座に反映されること
+    expect(find.text('友人が作成した箱根旅行記'), findsOneWidget);
+
+    // 2. その思い出の詳細画面を開く
+    await tester.tap(find.text('友人が作成した箱根旅行記'));
+    await tester.pumpAndSettle();
+    expect(find.text('記録されたレビューはありません'), findsOneWidget);
+
+    // 3. 思い出詳細画面を開いている最中に、友人が新しいスポット（レビュー）を追加した場合
+    final friendSpot = MemoryPin(
+      id: 'pin_hakone_friend_spot',
+      teamId: 'hakone_trip',
+      placeName: '大涌谷 黒たまご館',
+      address: '神奈川県足柄下郡箱根町仙石原1251',
+      prefecture: '神奈川県',
+      latitude: 35.2443,
+      longitude: 139.0195,
+      mapNormalizedPosition: const Offset(0.60, 0.60),
+      startTime: '11:00',
+      endTime: '12:00',
+      rating: 5,
+      comment: '黒たまごがアツアツで美味しかった！',
+      photoLabels: const ['黒たまご'],
+      recordedDate: DateTime(2026, 11, 8),
+      tripId: 'trip_hakone_friend_1',
+    );
+    await TripService.instance.savePin(friendSpot);
+    await tester.pumpAndSettle();
+
+    // 詳細画面のレビュー一覧に即座に反映されること
+    expect(find.textContaining('大涌谷 黒たまご館：黒たまごがアツアツで美味しかった！'), findsOneWidget);
+  });
 }
