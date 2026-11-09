@@ -5,13 +5,15 @@ import '../../../core/theme/app_theme.dart';
 
 /// ピン吹き出しの「詳細→」から表示されるボトムシート
 class PinDetailSheet extends StatelessWidget {
-  const PinDetailSheet({super.key, required this.pin, this.onDeletePin});
+  const PinDetailSheet({
+    super.key,
+    required this.pin,
+    this.onDeletePin,
+    this.onEdit,
+  });
 
   final MemoryPin pin;
   final ValueChanged<MemoryPin>? onDeletePin;
-  const PinDetailSheet({super.key, required this.pin, this.onEdit});
-
-  final MemoryPin pin;
   final ValueChanged<MemoryPin>? onEdit;
 
   static Future<void> show(
@@ -27,8 +29,8 @@ class PinDetailSheet extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (_) => PinDetailSheet(pin: pin, onDeletePin: onDeletePin),
-      builder: (_) => PinDetailSheet(pin: pin, onEdit: onEdit),
+      builder: (_) =>
+          PinDetailSheet(pin: pin, onDeletePin: onDeletePin, onEdit: onEdit),
     );
   }
 
@@ -179,7 +181,6 @@ class PinDetailSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-              ],
                 if (onEdit != null)
                   IconButton(
                     icon: const Icon(

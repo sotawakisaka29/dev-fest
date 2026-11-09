@@ -301,11 +301,15 @@ class _RecordScreenState extends State<RecordScreen>
     return '$h:$m';
   }
 
-  void _handleSave() {
+  Future<void> _handleSave() async {
+    if (_isUploading) return;
+
     final rawText = _placeController.text.trim();
     final placeName = !_shareLocation
         ? '非公開スポット'
-        : (rawText.isEmpty ? '新しい思い出スポット' : rawText);
+        : (rawText.isEmpty
+              ? (_isEditing ? widget.initialPin!.placeName : '新しい思い出スポット')
+              : rawText);
 
     // 予測候補が選択されている場合はその候補の住所・都道府県・座標を使用し、
     // 未選択のまま自由入力された場合は入力文字列から都道府県・住所リンク・座標を解決する
@@ -313,37 +317,21 @@ class _RecordScreenState extends State<RecordScreen>
         _selectedCandidate ??
         PlaceAutocompleteService.instance.resolveFromFreeText(placeName);
 
-    final createdPin = MemoryPin(
-      id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
-      teamId: widget.teamId,
-      placeName: placeName,
-      address: !_shareLocation
-          ? ''
-          : (_selectedAddress.isNotEmpty ? _selectedAddress : resolved.address),
-      prefecture: _selectedPrefecture.isNotEmpty
-          ? _selectedPrefecture
-          : resolved.prefecture,
-      latitude: _selectedCandidate != null
-          ? _selectedLatitude
-          : resolved.latitude,
-      longitude: _selectedCandidate != null
-          ? _selectedLongitude
-          : resolved.longitude,
-      mapNormalizedPosition: _selectedCandidate != null
-          ? _selectedNormalizedPosition
-          : resolved.normalizedPosition,
-      startTime: _formatTime(_startTime),
-      endTime: _formatTime(_endTime),
-      rating: !_shareLocation ? null : _rating,
-      comment: _commentController.text.trim(),
-      photoLabels: _photos.map((p) => p.label).toList(),
-      photos: List<AppPhoto>.from(_photos),
-      recordedDate: _selectedDate,
-      tripId: widget.activeTripId,
-      shareLocation: _shareLocation,
-    );
-  Future<void> _handleSave() async {
-    if (_isUploading) return;
+    final finalAddress = !_shareLocation
+        ? ''
+        : (_selectedAddress.isNotEmpty ? _selectedAddress : resolved.address);
+    final finalPrefecture = _selectedPrefecture.isNotEmpty
+        ? _selectedPrefecture
+        : resolved.prefecture;
+    final finalLatitude = _selectedCandidate != null
+        ? _selectedLatitude
+        : resolved.latitude;
+    final finalLongitude = _selectedCandidate != null
+        ? _selectedLongitude
+        : resolved.longitude;
+    final finalNormalizedPosition = _selectedCandidate != null
+        ? _selectedNormalizedPosition
+        : resolved.normalizedPosition;
 
     setState(() {
       _isUploading = true;
@@ -373,22 +361,18 @@ class _RecordScreenState extends State<RecordScreen>
 
     if (!mounted) return;
 
-    final placeName = _placeController.text.trim().isEmpty
-        ? (_isEditing ? widget.initialPin!.placeName : '新しい思い出スポット')
-        : _placeController.text.trim();
-
     final MemoryPin pinToReturn;
     if (_isEditing) {
       pinToReturn = widget.initialPin!.copyWith(
         placeName: placeName,
-        address: _selectedAddress,
-        prefecture: _selectedPrefecture,
-        latitude: _selectedLatitude,
-        longitude: _selectedLongitude,
-        mapNormalizedPosition: _selectedNormalizedPosition,
+        address: finalAddress,
+        prefecture: finalPrefecture,
+        latitude: finalLatitude,
+        longitude: finalLongitude,
+        mapNormalizedPosition: finalNormalizedPosition,
         startTime: _formatTime(_startTime),
         endTime: _formatTime(_endTime),
-        rating: _rating,
+        rating: !_shareLocation ? null : _rating,
         comment: _commentController.text.trim().isEmpty
             ? 'とても良い時間を過ごせました。'
             : _commentController.text.trim(),
@@ -402,14 +386,14 @@ class _RecordScreenState extends State<RecordScreen>
         id: 'pin_${DateTime.now().millisecondsSinceEpoch}',
         teamId: widget.teamId,
         placeName: placeName,
-        address: _selectedAddress,
-        prefecture: _selectedPrefecture,
-        latitude: _selectedLatitude,
-        longitude: _selectedLongitude,
-        mapNormalizedPosition: _selectedNormalizedPosition,
+        address: finalAddress,
+        prefecture: finalPrefecture,
+        latitude: finalLatitude,
+        longitude: finalLongitude,
+        mapNormalizedPosition: finalNormalizedPosition,
         startTime: _formatTime(_startTime),
         endTime: _formatTime(_endTime),
-        rating: _rating,
+        rating: !_shareLocation ? null : _rating,
         comment: _commentController.text.trim().isEmpty
             ? 'とても良い時間を過ごせました。'
             : _commentController.text.trim(),
@@ -451,97 +435,6 @@ class _RecordScreenState extends State<RecordScreen>
           const SizedBox(width: 8),
         ],
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              LocationInputSection(
-                shareLocation: _shareLocation,
-                placeController: _placeController,
-                selectedAddress: _selectedAddress,
-                selectedPrefecture: _selectedPrefecture,
-                selectedLatitude: _selectedLatitude,
-                selectedLongitude: _selectedLongitude,
-                onShareLocationChanged: (value) {
-                  setState(() => _shareLocation = value);
-                },
-                onPlaceTextChanged: (text) {
-                  final resolved = PlaceAutocompleteService.instance
-                      .resolveFromFreeText(text);
-                  setState(() {
-                    _selectedCandidate = null;
-                    if (text.trim().isEmpty) {
-                      _selectedAddress = '';
-                      _selectedPrefecture = '';
-                    } else {
-                      _selectedAddress = resolved.address;
-                      _selectedPrefecture = resolved.prefecture;
-                      _selectedLatitude = resolved.latitude;
-                      _selectedLongitude = resolved.longitude;
-                      _selectedNormalizedPosition = resolved.normalizedPosition;
-                    }
-                  });
-                },
-                onCandidateSelected: (candidate) {
-                  setState(() {
-                    _selectedCandidate = candidate;
-                    _placeController.text = candidate.name;
-                    _selectedAddress = candidate.address;
-                    _selectedPrefecture = candidate.prefecture;
-                    _selectedLatitude = candidate.latitude;
-                    _selectedLongitude = candidate.longitude;
-                    _selectedNormalizedPosition = candidate.normalizedPosition;
-                  });
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 16),
-              // 日時帯の選択セクション（訪問記録メタデータとして維持）
-              TimeRangeSection(
-                selectedDate: _selectedDate,
-                startTime: _startTime,
-                endTime: _endTime,
-                isLoadingPhotos: false,
-                onDateChanged: (date) {
-                  setState(() => _selectedDate = date);
-                },
-                onStartTimeChanged: (time) {
-                  setState(() => _startTime = time);
-                },
-                onEndTimeChanged: (time) {
-                  setState(() => _endTime = time);
-                },
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 12),
-              // 「しない」選択時は星評価のみ非表示にし、口コミ入力欄は常に表示する
-              ReviewInputSection(
-                rating: _rating,
-                showRating: _shareLocation,
-                commentController: _commentController,
-                onRatingChanged: (value) => setState(() => _rating = value),
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 16),
-              // 写真セクション（端末アルバム選択 ＆ Google Photos Picker API並行対応）
-              PhotoPickerSection(
-                photos: _photos,
-                isLoading: _isLoadingPhotos,
-                loadingMessage: _loadingMessage,
-                onAddFromGallery: _handlePickFromGallery,
-                onPickFromGooglePhotos: _handlePickFromGooglePhotos,
-                onRemovePhotoAt: (index) {
-                  setState(() {
-                    _photos.removeAt(index);
-                  });
-                },
-              ),
-            ],
       body: Stack(
         children: [
           SafeArea(
@@ -555,14 +448,32 @@ class _RecordScreenState extends State<RecordScreen>
                     placeController: _placeController,
                     selectedAddress: _selectedAddress,
                     selectedPrefecture: _selectedPrefecture,
+                    selectedLatitude: _selectedLatitude,
+                    selectedLongitude: _selectedLongitude,
                     onShareLocationChanged: (value) {
                       setState(() => _shareLocation = value);
                     },
-                    onPlaceTextChanged: (_) {
-                      setState(() {});
+                    onPlaceTextChanged: (text) {
+                      final resolved = PlaceAutocompleteService.instance
+                          .resolveFromFreeText(text);
+                      setState(() {
+                        _selectedCandidate = null;
+                        if (text.trim().isEmpty) {
+                          _selectedAddress = '';
+                          _selectedPrefecture = '';
+                        } else {
+                          _selectedAddress = resolved.address;
+                          _selectedPrefecture = resolved.prefecture;
+                          _selectedLatitude = resolved.latitude;
+                          _selectedLongitude = resolved.longitude;
+                          _selectedNormalizedPosition =
+                              resolved.normalizedPosition;
+                        }
+                      });
                     },
                     onCandidateSelected: (candidate) {
                       setState(() {
+                        _selectedCandidate = candidate;
                         _placeController.text = candidate.name;
                         _selectedAddress = candidate.address;
                         _selectedPrefecture = candidate.prefecture;
@@ -595,8 +506,10 @@ class _RecordScreenState extends State<RecordScreen>
                   const SizedBox(height: 20),
                   const Divider(),
                   const SizedBox(height: 12),
+                  // 「しない」選択時は星評価のみ非表示にし、口コミ入力欄は常に表示する
                   ReviewInputSection(
                     rating: _rating,
+                    showRating: _shareLocation,
                     commentController: _commentController,
                     onRatingChanged: (value) => setState(() => _rating = value),
                   ),

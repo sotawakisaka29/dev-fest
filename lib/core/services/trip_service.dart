@@ -204,7 +204,9 @@ class TripService {
         for (final doc in allTripsSnapshot.docs) {
           if (!targetTripIds.contains(doc.id)) {
             final rawPins = doc.data()['pins'] as List<dynamic>? ?? [];
-            final containsPin = rawPins.any((p) => p is Map && p['id'] == pin.id);
+            final containsPin = rawPins.any(
+              (p) => p is Map && p['id'] == pin.id,
+            );
             if (containsPin) {
               targetTripIds.add(doc.id);
             }

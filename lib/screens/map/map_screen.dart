@@ -35,7 +35,7 @@ class _MapScreenState extends State<MapScreen> {
 
   final List<MemoryPin> _allPins = [];
 
-  final List<TripMemory> _allMemories = [];
+  List<TripMemory> _allMemories = [];
 
   /// 起動直後はピン非選択（1倍の全体表示から開始）
   MemoryPin? _selectedPin;
@@ -308,7 +308,7 @@ class _MapScreenState extends State<MapScreen> {
       SnackBar(
         content: Text(
           'ルート記録を停止し、旅行まとめ「$title」（${createdMemory.formattedDistance}）を作成しました！',
-        content: Text('旅行まとめ「$title」を作成しました！'),
+        ),
         action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
       ),
     );
@@ -330,7 +330,6 @@ class _MapScreenState extends State<MapScreen> {
           activeTripId: pin.tripId,
           initialPin: pin,
         ),
-        action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
       ),
     );
     if (updatedPin != null && mounted) {
@@ -372,10 +371,8 @@ class _MapScreenState extends State<MapScreen> {
     final effectiveTeamId = teamId.isNotEmpty ? teamId : _selectedTeam.id;
     final newPin = await Navigator.of(context).push<MemoryPin>(
       MaterialPageRoute(
-        builder: (_) => RecordScreen(
-          teamId: effectiveTeamId,
-          activeTripId: tripId,
-        ),
+        builder: (_) =>
+            RecordScreen(teamId: effectiveTeamId, activeTripId: tripId),
       ),
     );
     if (newPin != null && mounted) {
@@ -413,11 +410,10 @@ class _MapScreenState extends State<MapScreen> {
               _groupService.saveMemory(createdMemory);
             }
           },
-          onDeleteMemory: (memoryId, pinIdsToDelete) async {
           onUpdateTripTitle: _handleUpdateTripTitle,
           onEditPin: _handleEditPin,
           onAddPin: _handleAddPinToTrip,
-          onDeleteMemory: (memoryId) {
+          onDeleteMemory: (memoryId, pinIdsToDelete) async {
             final target = _allMemories
                 .where((m) => m.id == memoryId)
                 .firstOrNull;
@@ -446,7 +442,7 @@ class _MapScreenState extends State<MapScreen> {
                 );
               }
             }
-            _tripService.deleteTrip(
+            await _tripService.deleteTrip(
               target?.teamId ?? _selectedTeam.id,
               memoryId,
             );
@@ -613,7 +609,7 @@ class _MapScreenState extends State<MapScreen> {
       );
       _selectedPin = null;
     });
-    _loadGroupDataFromDb(_selectedTeam.id);
+    _subscribeToTripsAndPins(_selectedTeam.id);
     if (!_currentUser.isAnonymous) {
       await _groupService.deleteGroup(team.id);
     }
@@ -633,7 +629,7 @@ class _MapScreenState extends State<MapScreen> {
       );
       _selectedPin = null;
     });
-    _loadGroupDataFromDb(_selectedTeam.id);
+    _subscribeToTripsAndPins(_selectedTeam.id);
     if (!_currentUser.isAnonymous) {
       await _groupService.leaveGroup(
         groupId: team.id,

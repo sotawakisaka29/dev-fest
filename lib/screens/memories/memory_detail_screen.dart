@@ -105,11 +105,6 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     }
   }
 
-  @override
-  State<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
-}
-
-class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
   late final List<MemoryPin> _pins = List<MemoryPin>.from(widget.memory.pins);
 
   /// 思い出削除時に「レビューも同時に削除するか」を質問し、チェックリストで選択する方式
@@ -723,17 +718,16 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                                     InkWell(
                                       borderRadius: BorderRadius.circular(8),
                                       onTap: () async {
-                                        final updatedPin = await widget
-                                            .onEditPin!(pin);
+                                        final updatedPin =
+                                            await widget.onEditPin!(pin);
                                         if (updatedPin != null && mounted) {
                                           setState(() {
                                             final updatedPins = _currentMemory
                                                 .pins
                                                 .map(
-                                                  (p) =>
-                                                      p.id == updatedPin.id
-                                                          ? updatedPin
-                                                          : p,
+                                                  (p) => p.id == updatedPin.id
+                                                      ? updatedPin
+                                                      : p,
                                                 )
                                                 .toList();
                                             _currentMemory = _currentMemory
