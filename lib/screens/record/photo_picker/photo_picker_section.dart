@@ -23,22 +23,25 @@ class PhotoPickerSection extends StatelessWidget {
   final String loadingMessage;
 
   Widget _buildPhotoImage(AppPhoto photo) {
-    // 1. 端末アルバムから選択されたローカル写真の場合
+    // 1. 端末アルバムから選択されたローカル写真の場合（実ファイルが存在する場合）
     if (photo.localPath != null && photo.localPath!.isNotEmpty) {
       final file = File(photo.localPath!);
-      return Image.file(
-        file,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          color: AppTheme.lightGrey,
-          child: const Center(
-            child: Icon(
-              Icons.broken_image_outlined,
-              color: AppTheme.mediumGrey,
-            ),
-          ),
-        ),
-      );
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) {
+            if (photo.url != null && photo.url!.isNotEmpty) {
+              return Image.network(
+                photo.url!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _buildBrokenPlaceholder(),
+              );
+            }
+            return _buildBrokenPlaceholder();
+          },
+        );
+      }
     }
 
     // 2. GoogleフォトなどのリモートURL写真の場合
@@ -59,15 +62,7 @@ class PhotoPickerSection extends StatelessWidget {
             ),
           );
         },
-        errorBuilder: (_, _, _) => Container(
-          color: AppTheme.surfaceGrey,
-          child: const Center(
-            child: Icon(
-              Icons.broken_image_outlined,
-              color: AppTheme.mediumGrey,
-            ),
-          ),
-        ),
+        errorBuilder: (_, _, _) => _buildBrokenPlaceholder(),
       );
     }
 
@@ -79,6 +74,18 @@ class PhotoPickerSection extends StatelessWidget {
           Icons.photo_outlined,
           size: 28,
           color: AppTheme.primaryGrey,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrokenPlaceholder() {
+    return Container(
+      color: AppTheme.surfaceGrey,
+      child: const Center(
+        child: Icon(
+          Icons.broken_image_outlined,
+          color: AppTheme.mediumGrey,
         ),
       ),
     );

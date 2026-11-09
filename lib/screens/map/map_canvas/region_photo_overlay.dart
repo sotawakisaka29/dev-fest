@@ -306,18 +306,34 @@ class _GeoPolygonPhotoSlideshowState extends State<_GeoPolygonPhotoSlideshow> {
     }
 
     final photo = photos[index.clamp(0, photos.length - 1)];
-    if (photo.localPath != null && photo.localPath!.isNotEmpty) {
+    final bool hasLocalFile = photo.localPath != null &&
+        photo.localPath!.isNotEmpty &&
+        File(photo.localPath!).existsSync();
+
+    if (hasLocalFile) {
       return Image.file(
         File(photo.localPath!),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) {
+          if (photo.url != null && photo.url!.isNotEmpty) {
+            return Image.network(
+              photo.url!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(color: AppTheme.mediumGrey),
+            );
+          }
+          return const ColoredBox(color: AppTheme.mediumGrey);
+        },
+      );
+    }
+    if (photo.url != null && photo.url!.isNotEmpty) {
+      return Image.network(
+        photo.url!,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => const ColoredBox(color: AppTheme.mediumGrey),
       );
     }
-    return Image.network(
-      photo.url!,
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => const ColoredBox(color: AppTheme.mediumGrey),
-    );
+    return const ColoredBox(color: AppTheme.mediumGrey);
   }
 }
 

@@ -568,12 +568,25 @@ class MemoryPhotoThumbnail extends StatelessWidget {
     final palette =
         _samplePalettes[photo.label.hashCode.abs() % _samplePalettes.length];
 
+    final bool hasLocalFile = photo.localPath != null &&
+        photo.localPath!.isNotEmpty &&
+        File(photo.localPath!).existsSync();
+
     Widget imageContent;
-    if (photo.localPath != null && photo.localPath!.isNotEmpty) {
+    if (hasLocalFile) {
       imageContent = Image.file(
         File(photo.localPath!),
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _buildFallbackVisual(palette),
+        errorBuilder: (_, _, _) {
+          if (photo.url != null && photo.url!.isNotEmpty) {
+            return Image.network(
+              photo.url!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _buildFallbackVisual(palette),
+            );
+          }
+          return _buildFallbackVisual(palette);
+        },
       );
     } else if (photo.url != null && photo.url!.isNotEmpty) {
       imageContent = Image.network(

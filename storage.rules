@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ユーザー認証の有無を判定
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // グループ配下に保存される訪問地点・思い出の写真
+    match /groups/{groupId}/photos/{photoId} {
+      // グループ写真の閲覧: 認証済みユーザーであれば可能
+      allow read: if isAuthenticated();
+
+      // グループ写真のアップロード: 認証済みユーザー、かつ画像ファイル（20MB以内）
+      allow write: if isAuthenticated()
+                   && request.resource.size < 20 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*') || request.resource.contentType == null);
+
+      // グループ写真の削除: 認証済みユーザー
+      allow delete: if isAuthenticated();
+    }
+
+    // デフォルトはすべてのアクセスを遮断
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
