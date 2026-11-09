@@ -155,20 +155,25 @@ class TripService {
     }
     _getPinsController(pin.teamId).add(List.unmodifiable(list));
 
-    // もし旅行に含まれるピンなら、該当旅行側の pins も更新
-    if (pin.tripId != null) {
-      final trips = _localTrips[pin.teamId] ?? [];
-      for (int i = 0; i < trips.length; i++) {
-        if (trips[i].id == pin.tripId) {
-          final updatedPins = trips[i].pins
-              .map((p) => p.id == pin.id ? pin : p)
-              .toList();
-          if (!updatedPins.any((p) => p.id == pin.id)) {
-            updatedPins.add(pin);
-          }
-          trips[i] = trips[i].copyWith(pins: updatedPins);
+    // 旅行に含まれるピン（tripId 一致、またはピンIDが含まれる旅行）側の pins も更新
+    final trips = _localTrips[pin.teamId] ?? [];
+    bool tripUpdated = false;
+    for (int i = 0; i < trips.length; i++) {
+      final isMatchedTrip =
+          (pin.tripId != null && trips[i].id == pin.tripId) ||
+          trips[i].pins.any((p) => p.id == pin.id);
+      if (isMatchedTrip) {
+        final updatedPins = trips[i].pins
+            .map((p) => p.id == pin.id ? pin : p)
+            .toList();
+        if (!updatedPins.any((p) => p.id == pin.id)) {
+          updatedPins.add(pin);
         }
+        trips[i] = trips[i].copyWith(pins: updatedPins);
+        tripUpdated = true;
       }
+    }
+    if (tripUpdated) {
       _getTripsController(pin.teamId).add(List.unmodifiable(trips));
     }
 
@@ -184,12 +189,37 @@ class TripService {
           .set(pin.toFirestore(), SetOptions(merge: true));
 
       // 旅行ドキュメント内の pins 配列も同期更新
+      final List<String> targetTripIds = [];
       if (pin.tripId != null) {
+        targetTripIds.add(pin.tripId!);
+      }
+
+      // tripId が空の場合や念のため、Firestore 上で該当ピンを含む旅行も検索
+      try {
+        final allTripsSnapshot = await db
+            .collection('groups')
+            .doc(pin.teamId)
+            .collection('trips')
+            .get();
+        for (final doc in allTripsSnapshot.docs) {
+          if (!targetTripIds.contains(doc.id)) {
+            final rawPins = doc.data()['pins'] as List<dynamic>? ?? [];
+            final containsPin = rawPins.any((p) => p is Map && p['id'] == pin.id);
+            if (containsPin) {
+              targetTripIds.add(doc.id);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Firestore trips search error: $e');
+      }
+
+      for (final tripId in targetTripIds) {
         final tripDoc = db
             .collection('groups')
             .doc(pin.teamId)
             .collection('trips')
-            .doc(pin.tripId);
+            .doc(tripId);
         final snapshot = await tripDoc.get();
         if (snapshot.exists) {
           final tripData = snapshot.data();

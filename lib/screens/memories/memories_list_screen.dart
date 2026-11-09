@@ -18,6 +18,7 @@ class MemoriesListScreen extends StatefulWidget {
     this.initialSelectedMemory,
     this.onUpdateTripTitle,
     this.onEditPin,
+    this.onAddPin,
   });
 
   final String teamName;
@@ -25,7 +26,8 @@ class MemoriesListScreen extends StatefulWidget {
   final ValueChanged<String> onDeleteMemory;
   final TripMemory? initialSelectedMemory;
   final void Function(String tripId, String newTitle)? onUpdateTripTitle;
-  final ValueChanged<MemoryPin>? onEditPin;
+  final Future<MemoryPin?> Function(MemoryPin)? onEditPin;
+  final Future<MemoryPin?> Function(String tripId, String teamId)? onAddPin;
 
   @override
   State<MemoriesListScreen> createState() => _MemoriesListScreenState();
@@ -82,7 +84,16 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
             });
             widget.onUpdateTripTitle?.call(memory.id, newTitle);
           },
+          onUpdateMemory: (updatedMemory) {
+            setState(() {
+              final idx = _items.indexWhere((m) => m.id == updatedMemory.id);
+              if (idx >= 0) {
+                _items[idx] = updatedMemory;
+              }
+            });
+          },
           onEditPin: widget.onEditPin,
+          onAddPin: widget.onAddPin,
         ),
       ),
     );

@@ -289,7 +289,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Future<void> _handleEditPin(MemoryPin pin) async {
+  Future<MemoryPin?> _handleEditPin(MemoryPin pin) async {
     final updatedPin = await Navigator.of(context).push<MemoryPin>(
       MaterialPageRoute(
         builder: (_) => RecordScreen(
@@ -300,11 +300,65 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
     if (updatedPin != null && mounted) {
+      setState(() {
+        final pinIdx = _allPins.indexWhere((p) => p.id == updatedPin.id);
+        if (pinIdx >= 0) {
+          _allPins[pinIdx] = updatedPin;
+        } else {
+          _allPins.add(updatedPin);
+        }
+
+        for (int i = 0; i < _allMemories.length; i++) {
+          final trip = _allMemories[i];
+          final hasPin = trip.pins.any((p) => p.id == updatedPin.id);
+          final matchesTrip =
+              updatedPin.tripId != null && trip.id == updatedPin.tripId;
+          if (hasPin || matchesTrip) {
+            final updatedPins = trip.pins
+                .map((p) => p.id == updatedPin.id ? updatedPin : p)
+                .toList();
+            if (!updatedPins.any((p) => p.id == updatedPin.id)) {
+              updatedPins.add(updatedPin);
+            }
+            _allMemories[i] = trip.copyWith(pins: updatedPins);
+          }
+        }
+
+        if (_selectedPin?.id == updatedPin.id) {
+          _selectedPin = updatedPin;
+        }
+      });
       await _tripService.savePin(updatedPin);
-      if (_selectedPin?.id == updatedPin.id) {
-        setState(() => _selectedPin = updatedPin);
-      }
+      return updatedPin;
     }
+    return null;
+  }
+
+  Future<MemoryPin?> _handleAddPinToTrip(String tripId, String teamId) async {
+    final effectiveTeamId = teamId.isNotEmpty ? teamId : _selectedTeam.id;
+    final newPin = await Navigator.of(context).push<MemoryPin>(
+      MaterialPageRoute(
+        builder: (_) => RecordScreen(
+          teamId: effectiveTeamId,
+          activeTripId: tripId,
+        ),
+      ),
+    );
+    if (newPin != null && mounted) {
+      setState(() {
+        _allPins.add(newPin);
+        for (int i = 0; i < _allMemories.length; i++) {
+          if (_allMemories[i].id == tripId) {
+            final updatedPins = List<MemoryPin>.from(_allMemories[i].pins)
+              ..add(newPin);
+            _allMemories[i] = _allMemories[i].copyWith(pins: updatedPins);
+          }
+        }
+      });
+      await _tripService.savePin(newPin);
+      return newPin;
+    }
+    return null;
   }
 
   Future<void> _openMemoriesScreen({TripMemory? initialMemory}) async {
@@ -316,6 +370,7 @@ class _MapScreenState extends State<MapScreen> {
           initialSelectedMemory: initialMemory,
           onUpdateTripTitle: _handleUpdateTripTitle,
           onEditPin: _handleEditPin,
+          onAddPin: _handleAddPinToTrip,
           onDeleteMemory: (memoryId) {
             final target = _allMemories
                 .where((m) => m.id == memoryId)
@@ -480,7 +535,11 @@ class _MapScreenState extends State<MapScreen> {
                 setState(() => _selectedPin = pin);
               },
               onOpenPinDetail: (pin) {
-                PinDetailSheet.show(context, pin, onEdit: _handleEditPin);
+                PinDetailSheet.show(
+                  context,
+                  pin,
+                  onEdit: (p) => _handleEditPin(p),
+                );
               },
               onTapRegionPins: _handleTapRegionPins,
               onInteractionChanged: _handleMapInteraction,
