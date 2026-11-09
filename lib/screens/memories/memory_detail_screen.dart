@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/models/app_photo.dart';
@@ -14,6 +13,11 @@ import '../../core/theme/app_theme.dart';
 /// - レビュー一覧：高評価順（★5 → ★4 → …）にソートして表示
 ///   - 各レビュー行に削除ボタンと「↗（Google Mapアプリ起動）」ボタン
 /// - 思い出削除時は「レビューも同時に削除するか」を質問し、チェックリストで選択して一括削除可能
+/// - レビュー一覧：高評価順（★5 → ★4 → …）にソートして表示、レビュー間の境目に十分な余白（32px）を確保
+///   - ★評価 ＋ コメント ＋ 右端「↗（登録住所のGoogle Mapアプリを起動）」
+///   - 写真があるレビューのみ直下に横スクロールで写真を表示（ない場合は表示なし）
+/// - 画面下部：3列グリッドで旅行全体の写真を説明文なしで一覧表示
+/// - すべての基本余白は8の倍数（8, 16, 24, 32）で構成
 class MemoryDetailScreen extends StatefulWidget {
   const MemoryDetailScreen({
     super.key,
@@ -21,12 +25,85 @@ class MemoryDetailScreen extends StatefulWidget {
     required this.onDelete,
     this.onDeleteSinglePin,
     this.onJumpToMapPin,
+    this.onUpdateTitle,
+    this.onUpdateMemory,
+    this.onEditPin,
+    this.onAddPin,
   });
 
   final TripMemory memory;
   final ValueChanged<Set<String>> onDelete;
   final ValueChanged<MemoryPin>? onDeleteSinglePin;
   final ValueChanged<MemoryPin>? onJumpToMapPin;
+  final ValueChanged<String>? onUpdateTitle;
+  final ValueChanged<TripMemory>? onUpdateMemory;
+  final Future<MemoryPin?> Function(MemoryPin)? onEditPin;
+  final Future<MemoryPin?> Function(String tripId, String teamId)? onAddPin;
+
+  @override
+  State<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
+}
+
+class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
+  late TripMemory _currentMemory;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentMemory = widget.memory;
+  }
+
+  @override
+  void didUpdateWidget(covariant MemoryDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.memory != oldWidget.memory) {
+      _currentMemory = widget.memory;
+    }
+  }
+
+  TripMemory get memory => _currentMemory;
+
+  Future<void> _showEditTitleDialog(BuildContext context) async {
+    final controller = TextEditingController(text: memory.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('旅行タイトルを編集'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: '新しい旅行タイトル',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final trimmed = controller.text.trim();
+                Navigator.of(
+                  dialogContext,
+                ).pop(trimmed.isEmpty ? memory.title : trimmed);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newTitle != null && newTitle.isNotEmpty && newTitle != memory.title) {
+      setState(() {
+        _currentMemory = _currentMemory.copyWith(title: newTitle);
+      });
+      widget.onUpdateTitle?.call(newTitle);
+    }
+  }
 
   @override
   State<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
@@ -333,6 +410,18 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
     );
   }
 
+  Future<void> _handleAddNewSpot() async {
+    final newPin = await widget.onAddPin?.call(memory.id, memory.teamId);
+    if (newPin != null && mounted) {
+      setState(() {
+        final updatedPins = List<MemoryPin>.from(_currentMemory.pins)
+          ..add(newPin);
+        _currentMemory = _currentMemory.copyWith(pins: updatedPins);
+      });
+      widget.onUpdateMemory?.call(_currentMemory);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // レビューを高評価順（rating の降順、未評価は末尾）にソート
@@ -401,6 +490,18 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                         ),
                         const SizedBox(width: 16),
                         // ゴミ箱アイコン（思い出削除・レビュー同時削除チェックリスト付き）
+                        const SizedBox(width: 8),
+                        // 鉛筆アイコン（タイトル編集）
+                        IconButton(
+                          tooltip: '旅行タイトルを編集',
+                          onPressed: () => _showEditTitleDialog(context),
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            size: 24,
+                            color: AppTheme.darkGrey,
+                          ),
+                        ),
+                        // ゴミ箱アイコン（削除）
                         IconButton(
                           key: const Key('delete_memory_header_button'),
                           tooltip: 'この思い出を削除',
@@ -464,23 +565,90 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'レビュー',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.darkGrey,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'レビュー',
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.darkGrey,
+                          ),
+                        ),
+                        if (widget.onAddPin != null)
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.darkGrey,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: _handleAddNewSpot,
+                            icon: const Icon(
+                              Icons.add_location_alt_outlined,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'スポットを追加',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     if (sortedPins.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Text(
-                          '記録されたレビューはありません',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppTheme.mediumGrey,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              const Text(
+                                '記録されたレビューはありません',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: AppTheme.mediumGrey,
+                                ),
+                              ),
+                              if (widget.onAddPin != null) ...[
+                                const SizedBox(height: 16),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppTheme.darkGrey,
+                                    side: const BorderSide(
+                                      color: AppTheme.lightGrey,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  onPressed: _handleAddNewSpot,
+                                  icon: const Icon(
+                                    Icons.add_location_alt_outlined,
+                                    size: 18,
+                                  ),
+                                  label: const Text(
+                                    '新しいスポットを追加',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       )
@@ -549,6 +717,45 @@ class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 2),
+                                  const SizedBox(width: 8),
+                                  // スポット編集ボタン
+                                  if (widget.onEditPin != null)
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () async {
+                                        final updatedPin = await widget
+                                            .onEditPin!(pin);
+                                        if (updatedPin != null && mounted) {
+                                          setState(() {
+                                            final updatedPins = _currentMemory
+                                                .pins
+                                                .map(
+                                                  (p) =>
+                                                      p.id == updatedPin.id
+                                                          ? updatedPin
+                                                          : p,
+                                                )
+                                                .toList();
+                                            _currentMemory = _currentMemory
+                                                .copyWith(pins: updatedPins);
+                                          });
+                                          widget.onUpdateMemory?.call(
+                                            _currentMemory,
+                                          );
+                                        }
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(8),
+                                        child: Tooltip(
+                                          message: 'スポットを編集',
+                                          child: Icon(
+                                            Icons.edit_outlined,
+                                            size: 20,
+                                            color: AppTheme.darkGrey,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   // ↗ 登録住所の Google Maps アプリへ飛ぶボタン
                                   InkWell(
                                     borderRadius: BorderRadius.circular(8),
@@ -675,12 +882,24 @@ class MemoryPhotoThumbnail extends StatelessWidget {
     final palette =
         _samplePalettes[photo.label.hashCode.abs() % _samplePalettes.length];
 
+    final localFile = photo.localFile;
+    final bool hasLocalFile = localFile != null && localFile.existsSync();
+
     Widget imageContent;
-    if (photo.localPath != null && photo.localPath!.isNotEmpty) {
+    if (hasLocalFile) {
       imageContent = Image.file(
-        File(photo.localPath!),
+        localFile,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _buildFallbackVisual(palette),
+        errorBuilder: (_, _, _) {
+          if (photo.url != null && photo.url!.isNotEmpty) {
+            return Image.network(
+              photo.url!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _buildFallbackVisual(palette),
+            );
+          }
+          return _buildFallbackVisual(palette);
+        },
       );
     } else if (photo.url != null && photo.url!.isNotEmpty) {
       imageContent = Image.network(

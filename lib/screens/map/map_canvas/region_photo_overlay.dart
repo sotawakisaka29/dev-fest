@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -339,11 +338,24 @@ class _GeoPolygonPhotoSlideshowState extends State<_GeoPolygonPhotoSlideshow> {
     }
 
     final photo = photos[index.clamp(0, photos.length - 1)];
-    if (photo.localPath != null && photo.localPath!.isNotEmpty) {
+    final localFile = photo.localFile;
+    final bool hasLocalFile = localFile != null && localFile.existsSync();
+
+    if (hasLocalFile) {
       return Image.file(
-        File(photo.localPath!),
+        localFile,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => const ColoredBox(color: AppTheme.mediumGrey),
+        errorBuilder: (_, _, _) {
+          if (photo.url != null && photo.url!.isNotEmpty) {
+            return Image.network(
+              photo.url!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  const ColoredBox(color: AppTheme.mediumGrey),
+            );
+          }
+          return const ColoredBox(color: AppTheme.mediumGrey);
+        },
       );
     }
     if (photo.url != null && photo.url!.isNotEmpty) {

@@ -22,6 +22,9 @@ class MemoriesListScreen extends StatefulWidget {
     required this.onCreateMemory,
     this.onDeleteSinglePin,
     this.initialSelectedMemory,
+    this.onUpdateTripTitle,
+    this.onEditPin,
+    this.onAddPin,
   });
 
   final String teamName;
@@ -33,13 +36,16 @@ class MemoriesListScreen extends StatefulWidget {
   final ValueChanged<TripMemory> onCreateMemory;
   final ValueChanged<MemoryPin>? onDeleteSinglePin;
   final TripMemory? initialSelectedMemory;
+  final void Function(String tripId, String newTitle)? onUpdateTripTitle;
+  final Future<MemoryPin?> Function(MemoryPin)? onEditPin;
+  final Future<MemoryPin?> Function(String tripId, String teamId)? onAddPin;
 
   @override
   State<MemoriesListScreen> createState() => _MemoriesListScreenState();
 }
 
 class _MemoriesListScreenState extends State<MemoriesListScreen> {
-  late final List<TripMemory> _items = List<TripMemory>.from(widget.memories);
+  late List<TripMemory> _items = List<TripMemory>.from(widget.memories);
 
   @override
   void initState() {
@@ -55,6 +61,17 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
   }
 
   void _handleDelete(TripMemory memory, Set<String> pinIdsToDelete) {
+  @override
+  void didUpdateWidget(covariant MemoriesListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.memories != oldWidget.memories) {
+      setState(() {
+        _items = List<TripMemory>.from(widget.memories);
+      });
+    }
+  }
+
+  void _handleDelete(TripMemory memory) {
     setState(() {
       _items.removeWhere((m) => m.id == memory.id);
     });
@@ -99,6 +116,25 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
           onJumpToMapPin: (pin) {
             Navigator.of(detailContext).pop(pin);
           },
+          onUpdateTitle: (newTitle) {
+            setState(() {
+              final idx = _items.indexWhere((m) => m.id == memory.id);
+              if (idx >= 0) {
+                _items[idx] = _items[idx].copyWith(title: newTitle);
+              }
+            });
+            widget.onUpdateTripTitle?.call(memory.id, newTitle);
+          },
+          onUpdateMemory: (updatedMemory) {
+            setState(() {
+              final idx = _items.indexWhere((m) => m.id == updatedMemory.id);
+              if (idx >= 0) {
+                _items[idx] = updatedMemory;
+              }
+            });
+          },
+          onEditPin: widget.onEditPin,
+          onAddPin: widget.onAddPin,
         ),
       ),
     );

@@ -299,9 +299,7 @@ class AuthService {
         await _googleSignIn.signOut();
       } catch (_) {}
       if (_auth != null) {
-        try {
-          await _auth!.signOut();
-        } catch (_) {}
+        await _auth!.signOut();
       }
     }
     _localAuthStateController.add(AppUser.demoUser);

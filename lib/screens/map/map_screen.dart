@@ -6,6 +6,7 @@ import '../../core/models/trip_memory.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/group_service.dart';
 import '../../core/services/location_tracking_service.dart';
+import '../../core/services/trip_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/login/login_screen.dart';
 import '../memories/memories_list_screen.dart';
@@ -27,15 +28,14 @@ class _MapScreenState extends State<MapScreen> {
   final GroupService _groupService = GroupService.instance;
   final LocationTrackingService _locationService =
       LocationTrackingService.instance;
+  final TripService _tripService = TripService.instance;
 
   List<TeamGroup> _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
   late TeamGroup _selectedTeam = _teams.first;
 
-  List<MemoryPin> _allPins = List<MemoryPin>.from(MemoryPin.initialSamplePins);
+  final List<MemoryPin> _allPins = [];
 
-  late List<TripMemory> _allMemories = TripMemory.buildInitialSampleMemories(
-    _allPins,
-  );
+  final List<TripMemory> _allMemories = [];
 
   /// 起動直後はピン非選択（1倍の全体表示から開始）
   MemoryPin? _selectedPin;
@@ -59,12 +59,15 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _idleRestoreTimer;
   StreamSubscription<List<TeamGroup>>? _groupsSubscription;
   StreamSubscription<AppUser>? _authSubscription;
+  StreamSubscription<List<MemoryPin>>? _pinsSubscription;
+  StreamSubscription<List<TripMemory>>? _tripsSubscription;
 
   @override
   void initState() {
     super.initState();
     _currentUser = _authService.currentUser;
     _listenAuthAndGroups();
+    _subscribeToTripsAndPins(_selectedTeam.id);
   }
 
   void _listenAuthAndGroups() {
@@ -83,10 +86,9 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _teams = List<TeamGroup>.from(TeamGroup.sampleTeams);
         _selectedTeam = _teams.first;
-        _allPins = List<MemoryPin>.from(MemoryPin.initialSamplePins);
-        _allMemories = TripMemory.buildInitialSampleMemories(_allPins);
         _selectedPin = null;
       });
+      _subscribeToTripsAndPins(_selectedTeam.id);
       return;
     }
     _groupsSubscription = _groupService.watchUserGroups(uid).listen((
@@ -101,41 +103,39 @@ class _MapScreenState extends State<MapScreen> {
         _teams = newGroups;
         _selectedTeam = nextSelected;
       });
-      _loadAllGroupsDataFromDb(newGroups);
+      _subscribeToTripsAndPins(nextSelected.id);
     });
   }
 
-  Future<void> _loadAllGroupsDataFromDb(List<TeamGroup> groups) async {
-    if (_currentUser.isAnonymous) return;
-    final List<MemoryPin> loadedPins = [];
-    final List<TripMemory> loadedMemories = [];
-    for (final group in groups) {
-      final pins = await _groupService.fetchGroupPins(group.id);
-      final memories = await _groupService.fetchGroupMemories(group.id);
-      loadedPins.addAll(pins);
-      loadedMemories.addAll(memories);
-    }
-    if (!mounted) return;
-    setState(() {
-      _allPins = loadedPins;
-      _allMemories = loadedMemories;
-    });
-  }
+  /// 選択グループのピン・旅行情報をリアルタイム購読（グループ全員の画面へ即時反映）
+  void _subscribeToTripsAndPins(String groupId) {
+    _pinsSubscription?.cancel();
+    _tripsSubscription?.cancel();
 
-  Future<void> _loadGroupDataFromDb(String groupId) async {
-    if (_currentUser.isAnonymous) return;
-    if (_selectedTeam.isPersonal) {
-      await _loadAllGroupsDataFromDb(_teams);
-      return;
-    }
-    final pins = await _groupService.fetchGroupPins(groupId);
-    final memories = await _groupService.fetchGroupMemories(groupId);
-    if (!mounted) return;
-    setState(() {
-      _allPins.removeWhere((p) => p.teamId == groupId);
-      _allPins.addAll(pins);
-      _allMemories.removeWhere((m) => m.teamId == groupId);
-      _allMemories.addAll(memories);
+    _pinsSubscription = _tripService.watchPins(groupId).listen((pins) {
+      if (!mounted) return;
+      setState(() {
+        // 当該グループのピンを最新のリアルタイムデータで更新
+        _allPins.removeWhere((p) => p.teamId == groupId);
+        _allPins.addAll(pins);
+        // 選択中ピンが更新された場合も追従
+        if (_selectedPin != null && _selectedPin!.teamId == groupId) {
+          final updated = pins
+              .where((p) => p.id == _selectedPin!.id)
+              .firstOrNull;
+          if (updated != null) {
+            _selectedPin = updated;
+          }
+        }
+      });
+    });
+
+    _tripsSubscription = _tripService.watchTrips(groupId).listen((trips) {
+      if (!mounted) return;
+      setState(() {
+        _allMemories.removeWhere((m) => m.teamId == groupId);
+        _allMemories.addAll(trips);
+      });
     });
   }
 
@@ -145,6 +145,8 @@ class _MapScreenState extends State<MapScreen> {
     _groupsSubscription?.cancel();
     _authSubscription?.cancel();
     _locationService.stopTracking();
+    _pinsSubscription?.cancel();
+    _tripsSubscription?.cancel();
     super.dispose();
   }
 
@@ -300,18 +302,97 @@ class _MapScreenState extends State<MapScreen> {
       _activeTripRoutePoints = [];
     });
 
-    if (!_currentUser.isAnonymous) {
-      _groupService.saveMemory(createdMemory);
-    }
+    _tripService.saveTrip(createdMemory);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           'ルート記録を停止し、旅行まとめ「$title」（${createdMemory.formattedDistance}）を作成しました！',
+        content: Text('旅行まとめ「$title」を作成しました！'),
+        action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
+      ),
+    );
+  }
+
+  Future<void> _handleUpdateTripTitle(String tripId, String newTitle) async {
+    await _tripService.updateTripTitle(
+      groupId: _selectedTeam.id,
+      tripId: tripId,
+      newTitle: newTitle,
+    );
+  }
+
+  Future<MemoryPin?> _handleEditPin(MemoryPin pin) async {
+    final updatedPin = await Navigator.of(context).push<MemoryPin>(
+      MaterialPageRoute(
+        builder: (_) => RecordScreen(
+          teamId: pin.teamId,
+          activeTripId: pin.tripId,
+          initialPin: pin,
         ),
         action: SnackBarAction(label: '思い出を見る', onPressed: _openMemoriesScreen),
       ),
     );
+    if (updatedPin != null && mounted) {
+      setState(() {
+        final pinIdx = _allPins.indexWhere((p) => p.id == updatedPin.id);
+        if (pinIdx >= 0) {
+          _allPins[pinIdx] = updatedPin;
+        } else {
+          _allPins.add(updatedPin);
+        }
+
+        for (int i = 0; i < _allMemories.length; i++) {
+          final trip = _allMemories[i];
+          final hasPin = trip.pins.any((p) => p.id == updatedPin.id);
+          final matchesTrip =
+              updatedPin.tripId != null && trip.id == updatedPin.tripId;
+          if (hasPin || matchesTrip) {
+            final updatedPins = trip.pins
+                .map((p) => p.id == updatedPin.id ? updatedPin : p)
+                .toList();
+            if (!updatedPins.any((p) => p.id == updatedPin.id)) {
+              updatedPins.add(updatedPin);
+            }
+            _allMemories[i] = trip.copyWith(pins: updatedPins);
+          }
+        }
+
+        if (_selectedPin?.id == updatedPin.id) {
+          _selectedPin = updatedPin;
+        }
+      });
+      await _tripService.savePin(updatedPin);
+      return updatedPin;
+    }
+    return null;
+  }
+
+  Future<MemoryPin?> _handleAddPinToTrip(String tripId, String teamId) async {
+    final effectiveTeamId = teamId.isNotEmpty ? teamId : _selectedTeam.id;
+    final newPin = await Navigator.of(context).push<MemoryPin>(
+      MaterialPageRoute(
+        builder: (_) => RecordScreen(
+          teamId: effectiveTeamId,
+          activeTripId: tripId,
+        ),
+      ),
+    );
+    if (newPin != null && mounted) {
+      setState(() {
+        _allPins.add(newPin);
+        for (int i = 0; i < _allMemories.length; i++) {
+          if (_allMemories[i].id == tripId) {
+            final updatedPins = List<MemoryPin>.from(_allMemories[i].pins)
+              ..add(newPin);
+            _allMemories[i] = _allMemories[i].copyWith(pins: updatedPins);
+          }
+        }
+      });
+      await _tripService.savePin(newPin);
+      return newPin;
+    }
+    return null;
   }
 
   Future<void> _openMemoriesScreen({TripMemory? initialMemory}) async {
@@ -333,6 +414,10 @@ class _MapScreenState extends State<MapScreen> {
             }
           },
           onDeleteMemory: (memoryId, pinIdsToDelete) async {
+          onUpdateTripTitle: _handleUpdateTripTitle,
+          onEditPin: _handleEditPin,
+          onAddPin: _handleAddPinToTrip,
+          onDeleteMemory: (memoryId) {
             final target = _allMemories
                 .where((m) => m.id == memoryId)
                 .firstOrNull;
@@ -361,6 +446,10 @@ class _MapScreenState extends State<MapScreen> {
                 );
               }
             }
+            _tripService.deleteTrip(
+              target?.teamId ?? _selectedTeam.id,
+              memoryId,
+            );
           },
         ),
       ),
@@ -406,9 +495,7 @@ class _MapScreenState extends State<MapScreen> {
           _activeTripPins.add(newPin);
         }
       });
-      if (!_currentUser.isAnonymous) {
-        await _groupService.savePin(newPin);
-      }
+      await _tripService.savePin(newPin);
     }
   }
 
@@ -441,6 +528,7 @@ class _MapScreenState extends State<MapScreen> {
           _selectedTeam = newTeam;
           _selectedPin = null;
         });
+        _subscribeToTripsAndPins(newTeam.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -475,7 +563,7 @@ class _MapScreenState extends State<MapScreen> {
           _selectedTeam = joinedTeam;
           _selectedPin = null;
         });
-        _loadGroupDataFromDb(joinedTeam.id);
+        _subscribeToTripsAndPins(joinedTeam.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('グループ「${joinedTeam.name}」に参加しました！'),
@@ -587,6 +675,7 @@ class _MapScreenState extends State<MapScreen> {
                   context,
                   pin,
                   onDeletePin: _handleDeletePin,
+                  onEdit: (p) => _handleEditPin(p),
                 );
               },
               onTapRegionPins: _handleTapRegionPins,
@@ -615,7 +704,7 @@ class _MapScreenState extends State<MapScreen> {
                     _selectedTeam = team;
                     _selectedPin = null;
                   });
-                  _loadGroupDataFromDb(team.id);
+                  _subscribeToTripsAndPins(team.id);
                 },
                 onCreateTeam: _handleCreateTeam,
                 onJoinTeamByCode: _handleJoinTeamByCode,

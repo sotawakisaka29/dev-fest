@@ -60,6 +60,26 @@ class TripMemory {
   final List<RoutePoint> routePoints;
   final double? customDistanceKm;
 
+  TripMemory copyWith({
+    String? id,
+    String? teamId,
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<MemoryPin>? pins,
+    double? customDistanceKm,
+  }) {
+    return TripMemory(
+      id: id ?? this.id,
+      teamId: teamId ?? this.teamId,
+      title: title ?? this.title,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      pins: pins ?? this.pins,
+      customDistanceKm: customDistanceKm ?? this.customDistanceKm,
+    );
+  }
+
   /// 「0月0日 〜 0月0日」形式の期間テキスト
   String get formattedDateRange {
     return '${startDate.month}月${startDate.day}日 〜 ${endDate.month}月${endDate.day}日';
@@ -196,10 +216,14 @@ class TripMemory {
 
   factory TripMemory.fromFirestore(String id, Map<String, dynamic> data) {
     final rawPins = data['pins'] as List<dynamic>? ?? const [];
-    final parsedPins = rawPins.whereType<Map<String, dynamic>>().map((m) {
-      final pinId = m['id'] as String? ?? 'pin_${m.hashCode}';
-      return MemoryPin.fromFirestore(pinId, m);
-    }).toList();
+    final parsedPins = rawPins.map((m) {
+      if (m is Map) {
+        final stringKeyMap = Map<String, dynamic>.from(m);
+        final pinId = stringKeyMap['id'] as String? ?? 'pin_${m.hashCode}';
+        return MemoryPin.fromFirestore(pinId, stringKeyMap);
+      }
+      return null;
+    }).whereType<MemoryPin>().toList();
 
     final rawRoutePoints = data['routePoints'] as List<dynamic>? ?? const [];
     final parsedRoutePoints = rawRoutePoints
@@ -223,197 +247,8 @@ class TripMemory {
     );
   }
 
-  /// 初期サンプル思い出リスト（実ルート軌跡データ付き）
+  /// 初期サンプル思い出リスト（シードデータなし）
   static List<TripMemory> buildInitialSampleMemories(List<MemoryPin> allPins) {
-    final kantoPins = allPins
-        .where((p) => p.tripId == 'trip_kanto_day')
-        .toList();
-    final kyotoPins = allPins
-        .where((p) => p.tripId == 'trip_kyoto_autumn')
-        .toList();
-    final hokkaidoPins = allPins
-        .where((p) => p.tripId == 'trip_hokkaido_gourmet')
-        .toList();
-    final hakonePins = allPins
-        .where((p) => p.tripId == 'trip_hakone_onsen')
-        .toList();
-    final cafePins = allPins
-        .where((p) => p.tripId == 'trip_daikanyama_cafe')
-        .toList();
-
-    // 東京・鎌倉ドライブ旅の実際の移動ルート（清澄白河→お台場・湾岸線→アクアライン海ほたる→横浜ベイブリッジ→鎌倉・七里ヶ浜）
-    final kantoRoute = <RoutePoint>[
-      RoutePoint(
-        latitude: 35.6821,
-        longitude: 139.7988,
-        timestamp: DateTime(2026, 10, 18, 10, 30),
-      ),
-      RoutePoint(
-        latitude: 35.6585,
-        longitude: 139.7924,
-        timestamp: DateTime(2026, 10, 18, 12, 10),
-      ),
-      RoutePoint(
-        latitude: 35.6260,
-        longitude: 139.7760,
-        timestamp: DateTime(2026, 10, 18, 12, 25),
-      ),
-      RoutePoint(
-        latitude: 35.5494,
-        longitude: 139.7798,
-        timestamp: DateTime(2026, 10, 18, 12, 42),
-      ),
-      RoutePoint(
-        latitude: 35.4646,
-        longitude: 139.8744,
-        timestamp: DateTime(2026, 10, 18, 13, 0),
-      ),
-      RoutePoint(
-        latitude: 35.5122,
-        longitude: 139.7445,
-        timestamp: DateTime(2026, 10, 18, 13, 35),
-      ),
-      RoutePoint(
-        latitude: 35.4437,
-        longitude: 139.6380,
-        timestamp: DateTime(2026, 10, 18, 13, 55),
-      ),
-      RoutePoint(
-        latitude: 35.3391,
-        longitude: 139.5489,
-        timestamp: DateTime(2026, 10, 18, 14, 15),
-      ),
-      RoutePoint(
-        latitude: 35.3056,
-        longitude: 139.5105,
-        timestamp: DateTime(2026, 10, 18, 14, 30),
-      ),
-    ];
-
-    return [
-      if (kantoPins.isNotEmpty)
-        TripMemory(
-          id: 'trip_kanto_day',
-          teamId: 'daily',
-          title: '東京・鎌倉ドライブ旅',
-          startDate: DateTime(2026, 10, 18, 10, 0),
-          endDate: DateTime(2026, 10, 19, 18, 0),
-          pins: kantoPins,
-          routePoints: kantoRoute,
-        ),
-      if (kyotoPins.isNotEmpty)
-        TripMemory(
-          id: 'trip_kyoto_autumn',
-          teamId: 'daily',
-          title: '京都・嵐山散策',
-          startDate: DateTime(2026, 10, 25, 9, 0),
-          endDate: DateTime(2026, 10, 26, 17, 0),
-          pins: kyotoPins,
-          routePoints: [
-            RoutePoint(
-              latitude: 35.0116,
-              longitude: 135.6767,
-              timestamp: DateTime(2026, 10, 25, 9, 0),
-            ),
-            RoutePoint(
-              latitude: 35.0138,
-              longitude: 135.6778,
-              timestamp: DateTime(2026, 10, 25, 9, 30),
-            ),
-            RoutePoint(
-              latitude: 35.0170,
-              longitude: 135.6713,
-              timestamp: DateTime(2026, 10, 25, 10, 15),
-            ),
-            RoutePoint(
-              latitude: 35.0212,
-              longitude: 135.6695,
-              timestamp: DateTime(2026, 10, 25, 11, 0),
-            ),
-          ],
-          customDistanceKm: 12.4,
-        ),
-      if (hokkaidoPins.isNotEmpty)
-        TripMemory(
-          id: 'trip_hokkaido_gourmet',
-          teamId: 'daily',
-          title: '札幌ナイトグルメ巡り',
-          startDate: DateTime(2026, 11, 1, 17, 0),
-          endDate: DateTime(2026, 11, 3, 21, 0),
-          pins: hokkaidoPins,
-          routePoints: [
-            RoutePoint(
-              latitude: 43.0687,
-              longitude: 141.3508,
-              timestamp: DateTime(2026, 11, 1, 17, 30),
-            ),
-            RoutePoint(
-              latitude: 43.0626,
-              longitude: 141.3535,
-              timestamp: DateTime(2026, 11, 1, 18, 0),
-            ),
-            RoutePoint(
-              latitude: 43.0555,
-              longitude: 141.3534,
-              timestamp: DateTime(2026, 11, 1, 19, 30),
-            ),
-          ],
-          customDistanceKm: 28.6,
-        ),
-      if (hakonePins.isNotEmpty)
-        TripMemory(
-          id: 'trip_hakone_onsen',
-          teamId: 'hakone_trip',
-          title: '箱根温泉1泊2日',
-          startDate: DateTime(2026, 11, 2, 11, 0),
-          endDate: DateTime(2026, 11, 3, 15, 0),
-          pins: hakonePins,
-          routePoints: [
-            RoutePoint(
-              latitude: 35.2564,
-              longitude: 139.1549,
-              timestamp: DateTime(2026, 11, 2, 13, 30),
-            ),
-            RoutePoint(
-              latitude: 35.2324,
-              longitude: 139.1069,
-              timestamp: DateTime(2026, 11, 2, 15, 0),
-            ),
-            RoutePoint(
-              latitude: 35.2435,
-              longitude: 139.0442,
-              timestamp: DateTime(2026, 11, 3, 10, 30),
-            ),
-          ],
-          customDistanceKm: 18.2,
-        ),
-      if (cafePins.isNotEmpty)
-        TripMemory(
-          id: 'trip_daikanyama_cafe',
-          teamId: 'cafe_club',
-          title: '代官山カフェ巡り',
-          startDate: DateTime(2026, 11, 5, 13, 0),
-          endDate: DateTime(2026, 11, 5, 17, 0),
-          pins: cafePins,
-          routePoints: [
-            RoutePoint(
-              latitude: 35.6580,
-              longitude: 139.7016,
-              timestamp: DateTime(2026, 11, 5, 13, 30),
-            ),
-            RoutePoint(
-              latitude: 35.6488,
-              longitude: 139.6994,
-              timestamp: DateTime(2026, 11, 5, 14, 0),
-            ),
-            RoutePoint(
-              latitude: 35.6442,
-              longitude: 139.7031,
-              timestamp: DateTime(2026, 11, 5, 16, 0),
-            ),
-          ],
-          customDistanceKm: 4.5,
-        ),
-    ];
+    return const [];
   }
 }

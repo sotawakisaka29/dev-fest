@@ -9,11 +9,16 @@ class PinDetailSheet extends StatelessWidget {
 
   final MemoryPin pin;
   final ValueChanged<MemoryPin>? onDeletePin;
+  const PinDetailSheet({super.key, required this.pin, this.onEdit});
+
+  final MemoryPin pin;
+  final ValueChanged<MemoryPin>? onEdit;
 
   static Future<void> show(
     BuildContext context,
     MemoryPin pin, {
     ValueChanged<MemoryPin>? onDeletePin,
+    ValueChanged<MemoryPin>? onEdit,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -23,6 +28,7 @@ class PinDetailSheet extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (_) => PinDetailSheet(pin: pin, onDeletePin: onDeletePin),
+      builder: (_) => PinDetailSheet(pin: pin, onEdit: onEdit),
     );
   }
 
@@ -174,6 +180,24 @@ class PinDetailSheet extends StatelessWidget {
                   ),
                 ),
               ],
+                if (onEdit != null)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppTheme.primaryGrey,
+                    ),
+                    tooltip: 'スポットを編集',
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      onEdit!(pin);
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              pin.address,
+              style: const TextStyle(fontSize: 13, color: AppTheme.primaryGrey),
             ),
             const SizedBox(height: 10),
             Row(

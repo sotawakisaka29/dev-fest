@@ -29,8 +29,13 @@ service cloud.firestore {
       // グループ削除: オーナーのみ
       allow delete: if isAuthenticated() && resource.data.ownerUid == request.auth.uid;
 
-      // グループ配下の訪問地点・思い出（サブコレクションまたは紐付きデータ用）
+      // グループ配下の訪問地点・ピン
       match /pins/{pinId} {
+        allow read, write: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
+      }
+
+      // グループ配下の旅行まとめ（TripMemory）
+      match /trips/{tripId} {
         allow read, write: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
       }
 

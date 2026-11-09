@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../core/models/app_photo.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -23,21 +22,22 @@ class PhotoPickerSection extends StatelessWidget {
   final String loadingMessage;
 
   Widget _buildPhotoImage(AppPhoto photo) {
-    // 1. 端末アルバムから選択されたローカル写真の場合
-    if (photo.localPath != null && photo.localPath!.isNotEmpty) {
-      final file = File(photo.localPath!);
+    // 1. ローカル写真実体が存在する場合（端末アルバムまたはGoogleフォト永続キャッシュ）
+    final localFile = photo.localFile;
+    if (localFile != null && localFile.existsSync()) {
       return Image.file(
-        file,
+        localFile,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          color: AppTheme.lightGrey,
-          child: const Center(
-            child: Icon(
-              Icons.broken_image_outlined,
-              color: AppTheme.mediumGrey,
-            ),
-          ),
-        ),
+        errorBuilder: (_, _, _) {
+          if (photo.url != null && photo.url!.isNotEmpty) {
+            return Image.network(
+              photo.url!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _buildBrokenPlaceholder(),
+            );
+          }
+          return _buildBrokenPlaceholder();
+        },
       );
     }
 
@@ -59,15 +59,7 @@ class PhotoPickerSection extends StatelessWidget {
             ),
           );
         },
-        errorBuilder: (_, _, _) => Container(
-          color: AppTheme.surfaceGrey,
-          child: const Center(
-            child: Icon(
-              Icons.broken_image_outlined,
-              color: AppTheme.mediumGrey,
-            ),
-          ),
-        ),
+        errorBuilder: (_, _, _) => _buildBrokenPlaceholder(),
       );
     }
 
@@ -80,6 +72,15 @@ class PhotoPickerSection extends StatelessWidget {
           size: 28,
           color: AppTheme.primaryGrey,
         ),
+      ),
+    );
+  }
+
+  Widget _buildBrokenPlaceholder() {
+    return Container(
+      color: AppTheme.surfaceGrey,
+      child: const Center(
+        child: Icon(Icons.broken_image_outlined, color: AppTheme.mediumGrey),
       ),
     );
   }
