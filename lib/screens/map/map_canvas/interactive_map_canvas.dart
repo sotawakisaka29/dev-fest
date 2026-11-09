@@ -456,6 +456,7 @@ class _InteractiveMapCanvasState extends State<InteractiveMapCanvas> {
                   compassEnabled: false,
                   rotateGesturesEnabled: false,
                   tiltGesturesEnabled: false,
+                  padding: const EdgeInsets.only(bottom: 30),
                   gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
                     Factory<OneSequenceGestureRecognizer>(
                       EagerGestureRecognizer.new,

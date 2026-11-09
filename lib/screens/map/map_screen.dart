@@ -59,25 +59,39 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _idleRestoreTimer;
   StreamSubscription<List<TeamGroup>>? _groupsSubscription;
   StreamSubscription<AppUser>? _authSubscription;
-  StreamSubscription<List<MemoryPin>>? _pinsSubscription;
-  StreamSubscription<List<TripMemory>>? _tripsSubscription;
+  final Map<String, StreamSubscription<List<MemoryPin>>> _pinsSubscriptions =
+      {};
+  final Map<String, StreamSubscription<List<TripMemory>>> _tripsSubscriptions =
+      {};
 
   @override
   void initState() {
     super.initState();
     _currentUser = _authService.currentUser;
     _listenAuthAndGroups();
-    _subscribeToTripsAndPins(_selectedTeam.id);
+    _syncGroupSubscriptions();
   }
 
   void _listenAuthAndGroups() {
     _authSubscription = _authService.authStateChanges.listen((user) {
       if (mounted) {
         setState(() => _currentUser = user);
+        _resetGroupDataSubscriptions();
         _subscribeToGroups(user.uid);
       }
     });
     _subscribeToGroups(_currentUser.uid);
+  }
+
+  void _resetGroupDataSubscriptions() {
+    for (final sub in _pinsSubscriptions.values) {
+      sub.cancel();
+    }
+    _pinsSubscriptions.clear();
+    for (final sub in _tripsSubscriptions.values) {
+      sub.cancel();
+    }
+    _tripsSubscriptions.clear();
   }
 
   void _subscribeToGroups(String uid) {
@@ -88,7 +102,7 @@ class _MapScreenState extends State<MapScreen> {
         _selectedTeam = _teams.first;
         _selectedPin = null;
       });
-      _subscribeToTripsAndPins(_selectedTeam.id);
+      _syncGroupSubscriptions();
       return;
     }
     _groupsSubscription = _groupService.watchUserGroups(uid).listen((
@@ -103,40 +117,93 @@ class _MapScreenState extends State<MapScreen> {
         _teams = newGroups;
         _selectedTeam = nextSelected;
       });
-      _subscribeToTripsAndPins(nextSelected.id);
+      _syncGroupSubscriptions();
+      for (final group in newGroups) {
+        _tripService.refreshGroupData(group.id);
+      }
     });
   }
 
-  /// 選択グループのピン・旅行情報をリアルタイム購読（グループ全員の画面へ即時反映）
-  void _subscribeToTripsAndPins(String groupId) {
-    _pinsSubscription?.cancel();
-    _tripsSubscription?.cancel();
+  /// 所属する全グループ（および選択中グループ）のピン・旅行情報をリアルタイム購読
+  void _syncGroupSubscriptions([String? ensureGroupId]) {
+    final activeGroupIds = <String>{
+      ..._teams.map((t) => t.id),
+      _selectedTeam.id,
+      if (ensureGroupId != null && ensureGroupId.isNotEmpty) ensureGroupId,
+    };
 
-    _pinsSubscription = _tripService.watchPins(groupId).listen((pins) {
-      if (!mounted) return;
+    // 所属しなくなったグループの購読を解除し、ローカル保持リストからも除去
+    final removedPinGroups = _pinsSubscriptions.keys
+        .where((id) => !activeGroupIds.contains(id))
+        .toList();
+    for (final id in removedPinGroups) {
+      _pinsSubscriptions.remove(id)?.cancel();
+    }
+    final removedTripGroups = _tripsSubscriptions.keys
+        .where((id) => !activeGroupIds.contains(id))
+        .toList();
+    for (final id in removedTripGroups) {
+      _tripsSubscriptions.remove(id)?.cancel();
+    }
+    if (removedPinGroups.isNotEmpty || removedTripGroups.isNotEmpty) {
       setState(() {
-        // 当該グループのピンを最新のリアルタイムデータで更新
-        _allPins.removeWhere((p) => p.teamId == groupId);
-        _allPins.addAll(pins);
-        // 選択中ピンが更新された場合も追従
-        if (_selectedPin != null && _selectedPin!.teamId == groupId) {
-          final updated = pins
-              .where((p) => p.id == _selectedPin!.id)
-              .firstOrNull;
-          if (updated != null) {
-            _selectedPin = updated;
+        _allPins.removeWhere((p) => !activeGroupIds.contains(p.teamId));
+        _allMemories.removeWhere((m) => !activeGroupIds.contains(m.teamId));
+      });
+    }
+
+    // 所属グループごとにリアルタイム購読を開始
+    for (final groupId in activeGroupIds) {
+      _subscribeToSingleGroup(groupId);
+    }
+  }
+
+  /// 単一グループのピン・旅行情報をリアルタイム購読（グループ全員の画面へ即時反映）
+  void _subscribeToSingleGroup(String groupId) {
+    if (!_pinsSubscriptions.containsKey(groupId)) {
+      _pinsSubscriptions[groupId] = _tripService.watchPins(groupId).listen((
+        pins,
+      ) {
+        if (!mounted) return;
+        setState(() {
+          // 当該グループのピンを最新のリアルタイムデータで更新
+          _allPins.removeWhere((p) => p.teamId == groupId);
+          _allPins.addAll(pins);
+          // 選択中ピンが更新された場合も追従
+          if (_selectedPin != null && _selectedPin!.teamId == groupId) {
+            final updated = pins
+                .where((p) => p.id == _selectedPin!.id)
+                .firstOrNull;
+            if (updated != null) {
+              _selectedPin = updated;
+            }
           }
-        }
+        });
       });
-    });
+    }
 
-    _tripsSubscription = _tripService.watchTrips(groupId).listen((trips) {
-      if (!mounted) return;
-      setState(() {
-        _allMemories.removeWhere((m) => m.teamId == groupId);
-        _allMemories.addAll(trips);
+    if (!_tripsSubscriptions.containsKey(groupId)) {
+      _tripsSubscriptions[groupId] = _tripService.watchTrips(groupId).listen((
+        trips,
+      ) {
+        if (!mounted) return;
+        setState(() {
+          _allMemories.removeWhere((m) => m.teamId == groupId);
+          _allMemories.addAll(trips);
+        });
       });
-    });
+    }
+  }
+
+  void _subscribeToTripsAndPins(String groupId) {
+    _syncGroupSubscriptions(groupId);
+    if (_selectedTeam.isPersonal) {
+      for (final team in _teams) {
+        _tripService.refreshGroupData(team.id);
+      }
+    } else {
+      _tripService.refreshGroupData(groupId);
+    }
   }
 
   @override
@@ -145,8 +212,14 @@ class _MapScreenState extends State<MapScreen> {
     _groupsSubscription?.cancel();
     _authSubscription?.cancel();
     _locationService.stopTracking();
-    _pinsSubscription?.cancel();
-    _tripsSubscription?.cancel();
+    for (final sub in _pinsSubscriptions.values) {
+      sub.cancel();
+    }
+    _pinsSubscriptions.clear();
+    for (final sub in _tripsSubscriptions.values) {
+      sub.cancel();
+    }
+    _tripsSubscriptions.clear();
     super.dispose();
   }
 
@@ -393,22 +466,37 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _openMemoriesScreen({TripMemory? initialMemory}) async {
+    final watchedTeamIds = _selectedTeam.isPersonal
+        ? _teams.map((t) => t.id).toList()
+        : <String>[_selectedTeam.id];
+
+    // 思い出画面を開くたびにDBから最新データを非同期取得してストリーム・画面へ反映
+    for (final gid in watchedTeamIds) {
+      _tripService.refreshGroupData(gid);
+    }
+
     final jumpedPin = await Navigator.of(context).push<MemoryPin>(
       MaterialPageRoute(
         builder: (_) => MemoriesListScreen(
           teamName: _selectedTeam.name,
           teamId: _selectedTeam.id,
+          watchedTeamIds: watchedTeamIds,
           memories: _currentTeamMemories,
           availablePins: _currentTeamPins,
           initialSelectedMemory: initialMemory,
           onDeleteSinglePin: _handleDeletePin,
-          onCreateMemory: (createdMemory) {
+          onCreateMemory: (createdMemory) async {
             setState(() {
+              _allMemories.removeWhere((m) => m.id == createdMemory.id);
               _allMemories.insert(0, createdMemory);
+              for (final updatedPin in createdMemory.pins) {
+                final idx = _allPins.indexWhere((p) => p.id == updatedPin.id);
+                if (idx >= 0) {
+                  _allPins[idx] = updatedPin;
+                }
+              }
             });
-            if (!_currentUser.isAnonymous) {
-              _groupService.saveMemory(createdMemory);
-            }
+            await _tripService.saveTrip(createdMemory);
           },
           onUpdateTripTitle: _handleUpdateTripTitle,
           onEditPin: _handleEditPin,
@@ -417,6 +505,7 @@ class _MapScreenState extends State<MapScreen> {
             final target = _allMemories
                 .where((m) => m.id == memoryId)
                 .firstOrNull;
+            final targetTeamId = target?.teamId ?? _selectedTeam.id;
             setState(() {
               _allMemories.removeWhere((m) => m.id == memoryId);
               if (pinIdsToDelete.isNotEmpty) {
@@ -430,22 +519,10 @@ class _MapScreenState extends State<MapScreen> {
                 }
               }
             });
-            if (!_currentUser.isAnonymous) {
-              await _groupService.deleteMemory(
-                target?.teamId ?? _selectedTeam.id,
-                memoryId,
-              );
-              for (final pinId in pinIdsToDelete) {
-                await _groupService.deletePin(
-                  target?.teamId ?? _selectedTeam.id,
-                  pinId,
-                );
-              }
+            for (final pinId in pinIdsToDelete) {
+              await _tripService.deletePin(targetTeamId, pinId);
             }
-            await _tripService.deleteTrip(
-              target?.teamId ?? _selectedTeam.id,
-              memoryId,
-            );
+            await _tripService.deleteTrip(targetTeamId, memoryId);
           },
         ),
       ),
@@ -595,9 +672,7 @@ class _MapScreenState extends State<MapScreen> {
       }).toList();
     });
 
-    if (!_currentUser.isAnonymous) {
-      await _groupService.deletePin(pin.teamId, pin.id);
-    }
+    await _tripService.deletePin(pin.teamId, pin.id);
   }
 
   Future<void> _handleDeleteTeam(TeamGroup team) async {
@@ -711,6 +786,29 @@ class _MapScreenState extends State<MapScreen> {
                 onDeleteTeam: _handleDeleteTeam,
                 onLeaveTeam: _handleLeaveTeam,
                 currentUid: _currentUser.uid,
+              ),
+            ),
+          ),
+
+          // 3. 地図下端の出典表示（国土交通省 国土数値情報 / CC BY遵守・常時表示）
+          //    Googleロゴの真下（上下逆・間に余白なし）に背景なしの極小テキストで配置
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: IgnorePointer(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 10, bottom: 0),
+                  child: const Text(
+                    '出典：国土交通省 国土数値情報（行政区域データ）',
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      height: 1.0,
+                      color: AppTheme.darkGrey,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

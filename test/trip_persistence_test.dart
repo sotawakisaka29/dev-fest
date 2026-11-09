@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_map_app/core/models/app_photo.dart';
 import 'package:my_map_app/core/models/memory_pin.dart';
 import 'package:my_map_app/core/models/trip_memory.dart';
+import 'package:my_map_app/core/services/group_service.dart';
 import 'package:my_map_app/core/services/trip_service.dart';
 
 void main() {
@@ -197,6 +198,131 @@ void main() {
 
       final trips = await tripService.watchTrips(groupId).first;
       expect(trips.any((t) => t.id == 'trip_delete_test'), isFalse);
+    });
+
+    test(
+      'GroupService.saveMemory 経由で追加された思い出も TripService.watchTrips に反映されること',
+      () async {
+        const groupId = 'test_group_friend_sync';
+        final friendMemory = TripMemory(
+          id: 'trip_friend_manual_1',
+          teamId: groupId,
+          title: '友人が追加した箱根の思い出',
+          startDate: DateTime(2026, 11, 8, 9, 0),
+          endDate: DateTime(2026, 11, 8, 20, 0),
+          pins: const [],
+        );
+
+        await GroupService.instance.saveMemory(friendMemory);
+
+        final trips = await tripService.watchTrips(groupId).first;
+        final matched = trips
+            .where((t) => t.id == 'trip_friend_manual_1')
+            .firstOrNull;
+        expect(matched, isNotNull);
+        expect(matched!.title, '友人が追加した箱根の思い出');
+      },
+    );
+
+    test('思い出作成後に友人が同じ旅行期間のスポット（ピン）を追加した場合、既存の思い出に自動反映されること', () async {
+      const groupId = 'test_group_window_match';
+      final trip = TripMemory(
+        id: 'trip_window_1',
+        teamId: groupId,
+        title: '伊豆グループ旅行',
+        startDate: DateTime(2026, 11, 9, 9, 0),
+        endDate: DateTime(2026, 11, 9, 21, 0),
+        pins: const [],
+      );
+
+      await tripService.saveTrip(trip);
+
+      // 友人が旅行スタートを押さずに（tripId == null）、同じ日時のピンを記録した場合
+      final friendPin = MemoryPin(
+        id: 'pin_friend_izu',
+        teamId: groupId,
+        placeName: '熱海プリン',
+        address: '静岡県熱海市田原本町3-14',
+        prefecture: '静岡県',
+        latitude: 35.1030,
+        longitude: 139.0777,
+        mapNormalizedPosition: const Offset(0.60, 0.65),
+        startTime: '14:00',
+        endTime: '15:00',
+        rating: 5,
+        comment: '友人が追加したプリンレビュー',
+        photoLabels: const ['プリン'],
+        recordedDate: DateTime(2026, 11, 9),
+      );
+
+      await tripService.savePin(friendPin);
+
+      final trips = await tripService.watchTrips(groupId).first;
+      final updatedTrip = trips.firstWhere((t) => t.id == 'trip_window_1');
+      expect(updatedTrip.pins.any((p) => p.id == 'pin_friend_izu'), isTrue);
+      expect(updatedTrip.pins.first.placeName, '熱海プリン');
+    });
+
+    test(
+      'サブコレクション内のドキュメントの teamId が空または別IDでも親 groupId に正規化され件数が一致すること',
+      () async {
+        const parentGroupId = 'group_actual_parent';
+        final rawFirestoreData = <String, dynamic>{
+          'teamId': 'daily_wrong_id',
+          'title': '別IDで保存されていた思い出',
+          'startDate': '2026-11-09T09:00:00.000',
+          'endDate': '2026-11-09T18:00:00.000',
+          'pins': [
+            {'id': 'pin_sub_1', 'teamId': '', 'placeName': '箱根神社'},
+          ],
+        };
+
+        final restored = TripMemory.fromFirestore(
+          'trip_legacy_1',
+          rawFirestoreData,
+          fallbackTeamId: parentGroupId,
+        );
+
+        expect(restored.teamId, parentGroupId);
+        expect(restored.pins.first.teamId, parentGroupId);
+      },
+    );
+
+    test('refreshGroupData / fetchTrips により思い出を開くたびに最新件数が同期されること', () async {
+      const groupId = 'test_group_refresh_count';
+      tripService.resetForTest();
+
+      final t1 = TripMemory(
+        id: 't1',
+        teamId: groupId,
+        title: '思い出1',
+        startDate: DateTime(2026, 11, 1),
+        endDate: DateTime(2026, 11, 1),
+        pins: const [],
+      );
+      final t2 = TripMemory(
+        id: 't2',
+        teamId: groupId,
+        title: '思い出2',
+        startDate: DateTime(2026, 11, 2),
+        endDate: DateTime(2026, 11, 2),
+        pins: const [],
+      );
+
+      await tripService.saveTrip(t1);
+      await tripService.saveTrip(t2);
+
+      final fetched = await tripService.fetchTrips(groupId);
+      expect(fetched.length, 2);
+
+      // 削除後に fetchTrips を呼ぶと1件になり、さらに全削除すると0件になること
+      await tripService.deleteTrip(groupId, 't1');
+      final afterDelete1 = await tripService.fetchTrips(groupId);
+      expect(afterDelete1.length, 1);
+
+      await tripService.deleteTrip(groupId, 't2');
+      final afterDeleteAll = await tripService.fetchTrips(groupId);
+      expect(afterDeleteAll, isEmpty);
     });
   });
 }
