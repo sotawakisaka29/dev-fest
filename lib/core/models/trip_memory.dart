@@ -132,7 +132,7 @@ class TripMemory {
   factory TripMemory.fromFirestore(String id, Map<String, dynamic> data) {
     final rawPins = data['pins'] as List<dynamic>? ?? const [];
     final parsedPins = rawPins.whereType<Map<String, dynamic>>().map((m) {
-      final pinId = m['id'] as String? ?? 'pin_${ m.hashCode }';
+      final pinId = m['id'] as String? ?? 'pin_${m.hashCode}';
       return MemoryPin.fromFirestore(pinId, m);
     }).toList();
 
@@ -222,4 +222,3 @@ class TripMemory {
     ];
   }
 }
-

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/app_photo.dart';
 import 'auth_service.dart';
+import 'photo_storage_service.dart';
 
 /// Google Photos Picker API 関連のエラー区分
 enum GooglePhotosErrorType {
@@ -386,8 +387,7 @@ class GooglePhotosService {
   }) async {
     final client = HttpClient();
     try {
-      final initialUrl =
-          baseUrl.contains('=') ? baseUrl : '$baseUrl=w800-h800';
+      final initialUrl = baseUrl.contains('=') ? baseUrl : '$baseUrl=w800-h800';
       Uri currentUri = Uri.parse(initialUrl);
 
       HttpClientResponse? response;
@@ -428,11 +428,11 @@ class GooglePhotosService {
       }
 
       final bytes = await consolidateHttpClientResponseBytes(response);
-      final tempDir = Directory.systemTemp;
-      final sanitizedId = id.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
-      final file = File('${tempDir.path}/gphoto_$sanitizedId.jpg');
-      await file.writeAsBytes(bytes);
-      return file.path;
+      final persistentPath = await PhotoStorageService.instance.savePhotoBytes(
+        photoId: id,
+        bytes: bytes,
+      );
+      return persistentPath;
     } catch (e) {
       debugPrint('Error downloading photo to temp file: $e');
       return null;
@@ -509,12 +509,6 @@ class GooglePhotosService {
     // 1. Googleアカウントログイン状態の確認（サイレントサインイン復元を含む）
     final googleUser = await AuthService.instance.ensureGoogleUser();
 
-    if (googleUser == null) {
-      return const GooglePhotosPickerResult.failure(
-        errorType: GooglePhotosErrorType.notSignedIn,
-        message: 'Googleアカウントにログインしていません。設定またはログイン画面からサインインしてください。',
-      );
-    }
     if (googleUser == null) {
       return const GooglePhotosPickerResult.failure(
         errorType: GooglePhotosErrorType.notSignedIn,

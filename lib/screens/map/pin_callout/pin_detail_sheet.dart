@@ -99,7 +99,10 @@ class PinDetailSheet extends StatelessWidget {
                 ),
                 if (onEdit != null)
                   IconButton(
-                    icon: const Icon(Icons.edit_outlined, color: AppTheme.primaryGrey),
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppTheme.primaryGrey,
+                    ),
                     tooltip: 'スポットを編集',
                     onPressed: () {
                       Navigator.of(context).pop();

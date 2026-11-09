@@ -31,6 +31,9 @@ class TripService {
   final Map<String, StreamController<List<TripMemory>>> _tripsControllers = {};
 
   void _initLocalFallbacks() {
+    _localPins.clear();
+    _localTrips.clear();
+
     // 初期サンプルピンをグループごとに分類
     for (final pin in MemoryPin.initialSamplePins) {
       _localPins.putIfAbsent(pin.teamId, () => []).add(pin);
@@ -42,6 +45,17 @@ class TripService {
     for (final trip in allSampleMemories) {
       _localTrips.putIfAbsent(trip.teamId, () => []).add(trip);
     }
+
+    // 初期の個人用グループ（personal / MyMap）にもサンプルを初期設定
+    _localPins
+        .putIfAbsent('personal', () => [])
+        .addAll(MemoryPin.initialSamplePins);
+    _localTrips.putIfAbsent('personal', () => []).addAll(allSampleMemories);
+  }
+
+  /// テスト用初期化リセット
+  void resetForTest() {
+    _initLocalFallbacks();
   }
 
   StreamController<List<MemoryPin>> _getPinsController(String groupId) {
@@ -93,7 +107,9 @@ class TripService {
             }).toList();
           })
           .handleError((error) {
-            debugPrint('Firestore watchPins error: $error. Falling back to local.');
+            debugPrint(
+              'Firestore watchPins error: $error. Falling back to local.',
+            );
             return fallbackList;
           });
     } catch (e) {
@@ -134,7 +150,9 @@ class TripService {
             }).toList();
           })
           .handleError((error) {
-            debugPrint('Firestore watchTrips error: $error. Falling back to local.');
+            debugPrint(
+              'Firestore watchTrips error: $error. Falling back to local.',
+            );
             return fallbackList;
           });
     } catch (e) {
@@ -160,7 +178,9 @@ class TripService {
       final trips = _localTrips[pin.teamId] ?? [];
       for (int i = 0; i < trips.length; i++) {
         if (trips[i].id == pin.tripId) {
-          final updatedPins = trips[i].pins.map((p) => p.id == pin.id ? pin : p).toList();
+          final updatedPins = trips[i].pins
+              .map((p) => p.id == pin.id ? pin : p)
+              .toList();
           if (!updatedPins.any((p) => p.id == pin.id)) {
             updatedPins.add(pin);
           }
@@ -193,12 +213,16 @@ class TripService {
           final tripData = snapshot.data();
           if (tripData != null) {
             final trip = TripMemory.fromFirestore(snapshot.id, tripData);
-            final updatedPins = trip.pins.map((p) => p.id == pin.id ? pin : p).toList();
+            final updatedPins = trip.pins
+                .map((p) => p.id == pin.id ? pin : p)
+                .toList();
             if (!updatedPins.any((p) => p.id == pin.id)) {
               updatedPins.add(pin);
             }
             await tripDoc.update({
-              'pins': updatedPins.map((p) => {'id': p.id, ...p.toFirestore()}).toList(),
+              'pins': updatedPins
+                  .map((p) => {'id': p.id, ...p.toFirestore()})
+                  .toList(),
             });
           }
         }

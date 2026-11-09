@@ -434,7 +434,8 @@ class _RecordScreenState extends State<RecordScreen>
                         _selectedPrefecture = candidate.prefecture;
                         _selectedLatitude = candidate.latitude;
                         _selectedLongitude = candidate.longitude;
-                        _selectedNormalizedPosition = candidate.normalizedPosition;
+                        _selectedNormalizedPosition =
+                            candidate.normalizedPosition;
                       });
                     },
                   ),

@@ -13,11 +13,9 @@ class InviteButton extends StatelessWidget {
 
   void _showInviteSheet(BuildContext context) {
     if (selectedTeam.isPersonal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('「MyMap」は個人用のため招待できません'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('「MyMap」は個人用のため招待できません')));
       return;
     }
 
