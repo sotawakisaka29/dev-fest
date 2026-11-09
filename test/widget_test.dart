@@ -45,6 +45,12 @@ void main() {
     expect(initialMap.compassEnabled, isFalse);
     expect(find.byType(RegionPhotoOverlay), findsOneWidget);
 
+    // CC BY遵守：地図画面の下端に「国土交通省 国土数値情報（行政区域データ）」の出典が常時表示されること
+    expect(
+      find.text('出典：国土交通省 国土数値情報（行政区域データ）'),
+      findsOneWidget,
+    );
+
     // 削除対象ボタン（簡易地図・都道府県フォト）および「ホーム」文字が存在せず、ホームアイコンボタンとピンだけを見るボタンが存在すること
     expect(find.text('簡易地図'), findsNothing);
     expect(find.text('都道府県フォト'), findsNothing);
