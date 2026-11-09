@@ -66,20 +66,22 @@ class PinCalloutCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              // ☆☆☆☆☆ 5段階評価
-              Row(
-                children: List.generate(5, (index) {
-                  final filled = index < pin.rating;
-                  return Icon(
-                    filled ? Icons.star_rounded : Icons.star_border_rounded,
-                    size: 18,
-                    color: AppTheme.darkGrey,
-                  );
-                }),
-              ),
-              const SizedBox(height: 6),
-              if (pin.comment.isNotEmpty)
+              // ☆☆☆☆☆ 5段階評価（評価がある場合のみ表示）
+              if (pin.rating != null && pin.rating! > 0) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: List.generate(5, (index) {
+                    final filled = index < pin.rating!;
+                    return Icon(
+                      filled ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 18,
+                      color: AppTheme.darkGrey,
+                    );
+                  }),
+                ),
+              ],
+              if (pin.comment.isNotEmpty) ...[
+                const SizedBox(height: 6),
                 Text(
                   pin.comment,
                   maxLines: 2,
@@ -90,6 +92,7 @@ class PinCalloutCard extends StatelessWidget {
                     height: 1.35,
                   ),
                 ),
+              ],
               if (pin.photoLabels.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 SizedBox(

@@ -3,24 +3,35 @@ import '../../core/models/app_photo.dart';
 import '../../core/models/memory_pin.dart';
 import '../../core/models/trip_memory.dart';
 import '../../core/theme/app_theme.dart';
+import 'create_memory_screen.dart';
 import 'memory_detail_screen.dart';
 
 /// ホームタブの「思い出」ボタン、または地図上の県・市プレビュータップから遷移する思い出一覧画面
 ///
 /// - 丸い輪郭（角丸や枠線）を廃止し、シャープな長方形の写真を全面背景に表示する。
 /// - カード内には右下にタイトルのみを表示する。
+/// - 右上の「＋」ボタンから、別ページ（CreateMemoryScreen）へ遷移して手動で思い出を新規作成できる。
 class MemoriesListScreen extends StatefulWidget {
   const MemoriesListScreen({
     super.key,
     required this.teamName,
+    required this.teamId,
     required this.memories,
+    required this.availablePins,
     required this.onDeleteMemory,
+    required this.onCreateMemory,
+    this.onDeleteSinglePin,
     this.initialSelectedMemory,
   });
 
   final String teamName;
+  final String teamId;
   final List<TripMemory> memories;
-  final ValueChanged<String> onDeleteMemory;
+  final List<MemoryPin> availablePins;
+  final void Function(String memoryId, Set<String> pinIdsToDelete)
+  onDeleteMemory;
+  final ValueChanged<TripMemory> onCreateMemory;
+  final ValueChanged<MemoryPin>? onDeleteSinglePin;
   final TripMemory? initialSelectedMemory;
 
   @override
@@ -43,11 +54,37 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
     }
   }
 
-  void _handleDelete(TripMemory memory) {
+  void _handleDelete(TripMemory memory, Set<String> pinIdsToDelete) {
     setState(() {
       _items.removeWhere((m) => m.id == memory.id);
     });
-    widget.onDeleteMemory(memory.id);
+    widget.onDeleteMemory(memory.id, pinIdsToDelete);
+  }
+
+  /// 右上の「＋」ボタン押下時：ダイアログではなく別ページ（CreateMemoryScreen）に遷移する
+  Future<void> _openCreateMemoryPage() async {
+    final created = await Navigator.of(context).push<TripMemory>(
+      MaterialPageRoute(
+        builder: (_) => CreateMemoryScreen(
+          teamId: widget.teamId,
+          availablePins: widget.availablePins,
+        ),
+      ),
+    );
+
+    if (created != null && mounted) {
+      setState(() {
+        _items.insert(0, created);
+      });
+      widget.onCreateMemory(created);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '思い出「${created.title}」（スポット${created.pins.length}件 / ${created.formattedDistance}）を作成しました',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _openDetail(TripMemory memory) async {
@@ -55,7 +92,10 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
       MaterialPageRoute(
         builder: (detailContext) => MemoryDetailScreen(
           memory: memory,
-          onDelete: () => _handleDelete(memory),
+          onDelete: (pinIdsToDelete) => _handleDelete(memory, pinIdsToDelete),
+          onDeleteSinglePin: (pin) {
+            widget.onDeleteSinglePin?.call(pin);
+          },
           onJumpToMapPin: (pin) {
             Navigator.of(detailContext).pop(pin);
           },
@@ -97,6 +137,14 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: '思い出を手動で追加',
+            icon: const Icon(Icons.add, size: 28, color: AppTheme.darkGrey),
+            onPressed: _openCreateMemoryPage,
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SafeArea(
         child: _items.isEmpty
@@ -113,7 +161,7 @@ class _MemoriesListScreenState extends State<MemoriesListScreen> {
                       ),
                       SizedBox(height: 16),
                       Text(
-                        'まだ思い出がありません。\n「旅行スタート」から旅を始めるとここにまとめが作られます。',
+                        'まだ思い出がありません。\n「旅行スタート」から旅を始めるか、右上の「＋」から作成できます。',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 14,

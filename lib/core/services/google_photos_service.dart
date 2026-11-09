@@ -383,8 +383,9 @@ class GooglePhotosService {
   }) async {
     final client = HttpClient();
     try {
-      final downloadUrl =
-          baseUrl.contains('=') ? baseUrl : '$baseUrl=w800-h800';
+      final downloadUrl = baseUrl.contains('=')
+          ? baseUrl
+          : '$baseUrl=w800-h800';
       final uri = Uri.parse(downloadUrl);
       final request = await client.getUrl(uri);
       request.headers.set(
@@ -482,12 +483,6 @@ class GooglePhotosService {
     // 1. Googleアカウントログイン状態の確認（サイレントサインイン復元を含む）
     final googleUser = await AuthService.instance.ensureGoogleUser();
 
-    if (googleUser == null) {
-      return const GooglePhotosPickerResult.failure(
-        errorType: GooglePhotosErrorType.notSignedIn,
-        message: 'Googleアカウントにログインしていません。設定またはログイン画面からサインインしてください。',
-      );
-    }
     if (googleUser == null) {
       return const GooglePhotosPickerResult.failure(
         errorType: GooglePhotosErrorType.notSignedIn,

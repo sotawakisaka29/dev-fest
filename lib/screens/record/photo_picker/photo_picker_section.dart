@@ -89,53 +89,14 @@ class PhotoPickerSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ヘッダー行
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  '写真',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.darkGrey,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceGrey,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppTheme.lightGrey),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.photo_library_outlined,
-                        size: 13,
-                        color: AppTheme.primaryGrey,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '合計 ${photos.length} 枚',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.primaryGrey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
+        // ヘッダー行（合計枚数表示なし）
+        const Text(
+          '写真',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.darkGrey,
+          ),
         ),
         const SizedBox(height: 12),
 

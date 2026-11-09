@@ -11,30 +11,205 @@ import '../../core/theme/app_theme.dart';
 ///
 /// - タイトル（下線付き）＋ ゴミ箱（削除）・紙飛行機（共有）アイコン
 /// - 期間（0月0日 〜 0月0日）＋ 総移動距離（0km）
-/// - レビュー一覧：高評価順（★5 → ★4 → …）にソートして表示、レビュー間の境目に十分な余白（32px）を確保
-///   - ★評価 ＋ コメント ＋ 右端「↗（登録住所のGoogle Mapアプリを起動）」
-///   - 写真があるレビューのみ直下に横スクロールで写真を表示（ない場合は表示なし）
-/// - 画面下部：3列グリッドで旅行全体の写真を説明文なしで一覧表示
-/// - すべての基本余白は8の倍数（8, 16, 24, 32）で構成
-class MemoryDetailScreen extends StatelessWidget {
+/// - レビュー一覧：高評価順（★5 → ★4 → …）にソートして表示
+///   - 各レビュー行に削除ボタンと「↗（Google Mapアプリ起動）」ボタン
+/// - 思い出削除時は「レビューも同時に削除するか」を質問し、チェックリストで選択して一括削除可能
+class MemoryDetailScreen extends StatefulWidget {
   const MemoryDetailScreen({
     super.key,
     required this.memory,
     required this.onDelete,
+    this.onDeleteSinglePin,
     this.onJumpToMapPin,
   });
 
   final TripMemory memory;
-  final VoidCallback onDelete;
+  final ValueChanged<Set<String>> onDelete;
+  final ValueChanged<MemoryPin>? onDeleteSinglePin;
   final ValueChanged<MemoryPin>? onJumpToMapPin;
 
+  @override
+  State<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
+}
+
+class _MemoryDetailScreenState extends State<MemoryDetailScreen> {
+  late final List<MemoryPin> _pins = List<MemoryPin>.from(widget.memory.pins);
+
+  /// 思い出削除時に「レビューも同時に削除するか」を質問し、チェックリストで選択する方式
   Future<void> _confirmDelete(BuildContext context) async {
+    final availablePins = List<MemoryPin>.from(_pins);
+    // 初期状態は思い出に含まれるレビューをすべて選択
+    final selectedPinIds = availablePins.map((p) => p.id).toSet();
+
+    final result = await showDialog<Set<String>?>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final allSelected =
+                availablePins.isNotEmpty &&
+                selectedPinIds.length == availablePins.length;
+
+            return AlertDialog(
+              backgroundColor: AppTheme.pureWhite,
+              title: const Text(
+                '思い出を削除',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.darkGrey,
+                ),
+              ),
+              content: SizedBox(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '「${widget.memory.title}」を削除します。',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.darkGrey,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (availablePins.isNotEmpty) ...[
+                      const Text(
+                        'この思い出に含まれるレビューも同時に削除しますか？',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.primaryGrey,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                            ),
+                            onPressed: () {
+                              setDialogState(() {
+                                if (allSelected) {
+                                  selectedPinIds.clear();
+                                } else {
+                                  selectedPinIds.addAll(
+                                    availablePins.map((p) => p.id),
+                                  );
+                                }
+                              });
+                            },
+                            child: Text(
+                              allSelected ? 'すべて解除' : 'すべて選択',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 180),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceGrey,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.lightGrey),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: availablePins.length,
+                              separatorBuilder: (_, _) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final pin = availablePins[index];
+                                final isChecked = selectedPinIds.contains(
+                                  pin.id,
+                                );
+                                return CheckboxListTile(
+                                  dense: true,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  value: isChecked,
+                                  activeColor: AppTheme.darkGrey,
+                                  title: Text(
+                                    pin.placeName,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.darkGrey,
+                                    ),
+                                  ),
+                                  subtitle: pin.address.isNotEmpty
+                                      ? Text(
+                                          pin.address,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.primaryGrey,
+                                          ),
+                                        )
+                                      : null,
+                                  onChanged: (bool? val) {
+                                    setDialogState(() {
+                                      if (val == true) {
+                                        selectedPinIds.add(pin.id);
+                                      } else {
+                                        selectedPinIds.remove(pin.id);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(null),
+                  child: const Text('キャンセル'),
+                ),
+                FilledButton(
+                  key: const Key('confirm_delete_memory_button'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: AppTheme.pureWhite,
+                  ),
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop(selectedPinIds),
+                  child: const Text('削除する'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null && context.mounted) {
+      widget.onDelete(result);
+      Navigator.of(context).pop();
+    }
+  }
+
+  /// 個別のレビュー（ピン）削除機能
+  Future<void> _confirmDeleteSinglePin(MemoryPin pin) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('思い出を削除'),
-          content: Text('「${memory.title}」を削除してもよろしいですか？'),
+          title: const Text('レビューを削除'),
+          content: Text('「${pin.placeName}」のレビューを削除してもよろしいですか？'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -53,17 +228,22 @@ class MemoryDetailScreen extends StatelessWidget {
       },
     );
 
-    if (confirmed == true && context.mounted) {
-      onDelete();
-      Navigator.of(context).pop();
+    if (confirmed == true && mounted) {
+      setState(() {
+        _pins.removeWhere((p) => p.id == pin.id);
+      });
+      widget.onDeleteSinglePin?.call(pin);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('「${pin.placeName}」のレビューを削除しました')));
     }
   }
 
   void _showShareSheet(BuildContext context) {
     final summaryText =
-        '【${memory.title}】\n'
-        '期間: ${memory.formattedDateRange} / 総移動距離: ${memory.formattedDistance}\n'
-        '訪問スポット: ${memory.pins.map((p) => p.placeName).join(' → ')}';
+        '【${widget.memory.title}】\n'
+        '期間: ${widget.memory.formattedDateRange} / 総移動距離: ${widget.memory.formattedDistance}\n'
+        '訪問スポット: ${_pins.map((p) => p.placeName).join(' → ')}';
 
     showModalBottomSheet<void>(
       context: context,
@@ -85,7 +265,7 @@ class MemoryDetailScreen extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '「${memory.title}」を共有',
+                        '「${widget.memory.title}」を共有',
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -124,9 +304,7 @@ class MemoryDetailScreen extends StatelessWidget {
                       }
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('旅行まとめの共有テキストをコピーしました'),
-                          ),
+                          const SnackBar(content: Text('旅行まとめの共有テキストをコピーしました')),
                         );
                       }
                     },
@@ -157,10 +335,14 @@ class MemoryDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // レビューを高評価順（rating の降順）にソート
-    final sortedPins = List<MemoryPin>.from(memory.pins)
-      ..sort((a, b) => b.rating.compareTo(a.rating));
-    final allPhotos = memory.allPhotos;
+    // レビューを高評価順（rating の降順、未評価は末尾）にソート
+    final sortedPins = List<MemoryPin>.from(_pins)
+      ..sort((a, b) => (b.rating ?? -1).compareTo(a.rating ?? -1));
+
+    final List<AppPhoto> allPhotos = [];
+    for (final pin in _pins) {
+      allPhotos.addAll(TripMemory.photosForPin(pin));
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.pureWhite,
@@ -184,7 +366,7 @@ class MemoryDetailScreen extends StatelessWidget {
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // 1. ヘッダー：タイトル・下線・ゴミ箱・共有・日付期間・総移動距離（余白はすべて8の倍数）
+            // 1. ヘッダー：タイトル・下線・ゴミ箱・共有・日付期間・総移動距離
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -207,7 +389,7 @@ class MemoryDetailScreen extends StatelessWidget {
                               ),
                             ),
                             child: Text(
-                              memory.title,
+                              widget.memory.title,
                               style: const TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
@@ -218,8 +400,9 @@ class MemoryDetailScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 16),
-                        // ゴミ箱アイコン（削除）
+                        // ゴミ箱アイコン（思い出削除・レビュー同時削除チェックリスト付き）
                         IconButton(
+                          key: const Key('delete_memory_header_button'),
                           tooltip: 'この思い出を削除',
                           onPressed: () => _confirmDelete(context),
                           icon: const Icon(
@@ -245,7 +428,7 @@ class MemoryDetailScreen extends StatelessWidget {
                     Row(
                       children: [
                         Text(
-                          memory.formattedDateRange,
+                          widget.memory.formattedDateRange,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w500,
@@ -260,7 +443,7 @@ class MemoryDetailScreen extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          memory.formattedDistance,
+                          widget.memory.formattedDistance,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
@@ -274,7 +457,7 @@ class MemoryDetailScreen extends StatelessWidget {
               ),
             ),
 
-            // 2. レビュー一覧セクション（高評価順・レビュー間の境目に32pxの余白）
+            // 2. レビュー一覧セクション（高評価順・境目に32px余白・各レビュー削除機能）
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
@@ -309,30 +492,31 @@ class MemoryDetailScreen extends StatelessWidget {
                             : pin.placeName;
 
                         return Padding(
-                          // レビューとレビューの境目がはっきり分かるよう 32px（8×4）の余白を確保
                           padding: const EdgeInsets.only(bottom: 32),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // ★★★★★ 〜〜〜〜〜〜   ↗（登録住所のGoogle Mapアプリを起動）
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  // 5段階の星表示
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: List.generate(5, (index) {
-                                      final filled = index < pin.rating;
-                                      return Icon(
-                                        filled
-                                            ? Icons.star_rounded
-                                            : Icons.star_border_rounded,
-                                        size: 20,
-                                        color: AppTheme.darkGrey,
-                                      );
-                                    }),
-                                  ),
-                                  const SizedBox(width: 8),
+                                  // 5段階の星表示（評価がある場合のみ表示）
+                                  if (pin.rating != null &&
+                                      pin.rating! > 0) ...[
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: List.generate(5, (index) {
+                                        final filled = index < pin.rating!;
+                                        return Icon(
+                                          filled
+                                              ? Icons.star_rounded
+                                              : Icons.star_border_rounded,
+                                          size: 20,
+                                          color: AppTheme.darkGrey,
+                                        );
+                                      }),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
                                   // レビューコメント＋場所名
                                   Expanded(
                                     child: Text(
@@ -346,14 +530,34 @@ class MemoryDetailScreen extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 4),
+                                  // レビュー個別削除ボタン
+                                  InkWell(
+                                    key: Key('delete_review_${pin.id}'),
+                                    borderRadius: BorderRadius.circular(8),
+                                    onTap: () => _confirmDeleteSinglePin(pin),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(6),
+                                      child: Tooltip(
+                                        message: 'このレビューを削除',
+                                        child: Icon(
+                                          Icons.delete_outline,
+                                          size: 18,
+                                          color: AppTheme.mediumGrey,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 2),
                                   // ↗ 登録住所の Google Maps アプリへ飛ぶボタン
                                   InkWell(
                                     borderRadius: BorderRadius.circular(8),
-                                    onTap: () =>
-                                        _handleOpenExternalGoogleMap(context, pin),
+                                    onTap: () => _handleOpenExternalGoogleMap(
+                                      context,
+                                      pin,
+                                    ),
                                     child: const Padding(
-                                      padding: EdgeInsets.all(8),
+                                      padding: EdgeInsets.all(6),
                                       child: Tooltip(
                                         message: 'Google Maps アプリで住所を開く',
                                         child: Icon(
@@ -367,7 +571,7 @@ class MemoryDetailScreen extends StatelessWidget {
                                 ],
                               ),
 
-                              // 横スクロールで写真（ない場合はとくに表示なし・説明文字なし）
+                              // 横スクロールで写真
                               if (pinPhotos.isNotEmpty) ...[
                                 const SizedBox(height: 8),
                                 SizedBox(
@@ -402,7 +606,7 @@ class MemoryDetailScreen extends StatelessWidget {
               ),
             ),
 
-            // 3. 下部：3列グリッドで写真一覧（写真の説明等は一切表示しない）
+            // 3. 下部：3列グリッドで写真一覧
             if (allPhotos.isNotEmpty) ...[
               const SliverToBoxAdapter(
                 child: Padding(
@@ -419,19 +623,16 @@ class MemoryDetailScreen extends StatelessWidget {
                     crossAxisSpacing: 8,
                     childAspectRatio: 1.0,
                   ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final photo = allPhotos[index];
-                      return MemoryPhotoThumbnail(
-                        photo: photo,
-                        borderRadius: 0,
-                        showBorder: false,
-                        showCaptionOverlay: false,
-                        showPlaceholderLabel: false,
-                      );
-                    },
-                    childCount: allPhotos.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final photo = allPhotos[index];
+                    return MemoryPhotoThumbnail(
+                      photo: photo,
+                      borderRadius: 0,
+                      showBorder: false,
+                      showCaptionOverlay: false,
+                      showPlaceholderLabel: false,
+                    );
+                  }, childCount: allPhotos.length),
                 ),
               ),
             ],
@@ -501,10 +702,7 @@ class MemoryPhotoThumbnail extends StatelessWidget {
             right: 0,
             bottom: 0,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,

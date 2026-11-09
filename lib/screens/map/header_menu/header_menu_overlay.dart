@@ -27,6 +27,9 @@ class HeaderMenuOverlay extends StatelessWidget {
     required this.onOpenMemories,
     required this.onOpenRecord,
     required this.onOpenAuth,
+    this.onDeleteTeam,
+    this.onLeaveTeam,
+    this.currentUid = '',
   });
 
   final bool visible;
@@ -43,6 +46,9 @@ class HeaderMenuOverlay extends StatelessWidget {
   final VoidCallback onOpenMemories;
   final VoidCallback onOpenRecord;
   final VoidCallback onOpenAuth;
+  final ValueChanged<TeamGroup>? onDeleteTeam;
+  final ValueChanged<TeamGroup>? onLeaveTeam;
+  final String currentUid;
 
   static const List<Shadow> _labelShadows = [
     Shadow(color: Colors.white, blurRadius: 8),
@@ -71,9 +77,12 @@ class HeaderMenuOverlay extends StatelessWidget {
                     child: TeamSelectorDropdown(
                       teams: teams,
                       selectedTeam: selectedTeam,
+                      currentUid: currentUid,
                       onTeamSelected: onTeamSelected,
                       onCreateTeam: onCreateTeam,
                       onJoinTeamByCode: onJoinTeamByCode,
+                      onDeleteTeam: onDeleteTeam,
+                      onLeaveTeam: onLeaveTeam,
                     ),
                   ),
                   const SizedBox(width: 8),

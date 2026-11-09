@@ -18,7 +18,7 @@ class MemoryPin {
     required this.mapNormalizedPosition,
     required this.startTime,
     required this.endTime,
-    required this.rating,
+    this.rating,
     required this.comment,
     required this.photoLabels,
     this.photos = const [],
@@ -47,8 +47,8 @@ class MemoryPin {
   final String startTime;
   final String endTime;
 
-  /// 1〜5の星評価（通過点のみの場合は0）
-  final int rating;
+  /// 1〜5の星評価（未評価・評価なし・通過点の場合はnull）
+  final int? rating;
   final String comment;
   final List<String> photoLabels;
 
@@ -68,20 +68,41 @@ class MemoryPin {
 
   /// 住所文字列から市区町村名（例: 江東区、鎌倉市、京都市、札幌市、箱根町）を抽出する
   String get city {
-    var rest = address;
-    if (prefecture.isNotEmpty && rest.startsWith(prefecture)) {
-      rest = rest.substring(prefecture.length);
-    }
-    final match = RegExp(r'^([^0-9０-９\-ー]+?[市区町村])').firstMatch(rest);
-    if (match != null) {
-      final raw = match.group(1)!;
-      // 「足柄下郡箱根町」のように郡が含まれる場合は町・村名を優先表示
-      final gunSplit = raw.split('郡');
-      if (gunSplit.length > 1 && gunSplit.last.isNotEmpty) {
-        return gunSplit.last;
+    var rest = address.trim();
+    // Google Maps等の「日本、〒123-4567 」プレフィックスを除去
+    rest = rest.replaceFirst(
+      RegExp(r'^(?:日本[、,\s]*)?(?:〒?\s*\d{3}[-ー]\d{4}\s*)?'),
+      '',
+    );
+    if (prefecture.isNotEmpty) {
+      final prefIndex = rest.indexOf(prefecture);
+      if (prefIndex >= 0) {
+        rest = rest.substring(prefIndex + prefecture.length).trim();
       }
-      return raw;
     }
+
+    // 1. 「足柄下郡箱根町」のように郡（大和郡山市・小郡市・蒲郡市・郡山市を除く）が含まれる場合は町・村名を抽出
+    final gunMatch = RegExp(
+      r'^(?!(?:大和郡山|小郡|蒲郡|郡山)市)([^0-9０-９\-ー\s市区町村]+?郡)\s*([^0-9０-９\-ー\s]+?[町村])',
+    ).firstMatch(rest);
+    if (gunMatch != null) {
+      return gunMatch.group(2)!;
+    }
+
+    // 2. 市名（政令指定都市の「京都市右京区」→「京都市」、および「市川市」「四日市市」「廿日市市」「町田市」「東村山市」等に対応）
+    final shiMatch = RegExp(
+      r'^((?:市川|市原|四日市|廿日市|八日市場|十日町|野々市|大町|町田|東村山|武蔵村山|羽村|村上|大村|[^0-9０-９\-ー\s市区]+?)市)',
+    ).firstMatch(rest);
+    if (shiMatch != null) {
+      return shiMatch.group(1)!;
+    }
+
+    // 3. 特別区（東京都23区など）や郡省略の町村名
+    final kuChosonMatch = RegExp(r'^([^0-9０-９\-ー\s]+?[区町村])').firstMatch(rest);
+    if (kuChosonMatch != null) {
+      return kuChosonMatch.group(1)!;
+    }
+
     return prefecture;
   }
 
@@ -196,7 +217,7 @@ class MemoryPin {
       ),
       startTime: data['startTime'] as String? ?? '10:00',
       endTime: data['endTime'] as String? ?? '11:00',
-      rating: (data['rating'] as num?)?.toInt() ?? 0,
+      rating: (data['rating'] as num?)?.toInt(),
       comment: data['comment'] as String? ?? '',
       photoLabels: labels,
       photos: parsedPhotos,
@@ -209,7 +230,69 @@ class MemoryPin {
     );
   }
 
-  static const List<MemoryPin> initialSamplePins = [
+  /// このピンが指定された開始日時〜終了日時の範囲内に該当するかどうかを判定する
+  bool matchesTimeWindow(DateTime windowStart, DateTime windowEnd) {
+    final pinRange = resolvedTimeRange;
+    if (pinRange != null) {
+      // ピンの滞在時間帯と指定期間が少しでも重なっていれば一致とみなす
+      final overlaps =
+          !pinRange.$2.isBefore(windowStart) && !pinRange.$1.isAfter(windowEnd);
+      if (overlaps) return true;
+    }
+
+    // 写真の撮影日時（takenAt）が指定期間内にある場合も一致とみなす
+    for (final photo in photos) {
+      final taken = photo.takenAt;
+      if (taken != null &&
+          !taken.isBefore(windowStart) &&
+          !taken.isAfter(windowEnd)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// `recordedDate` と `startTime` / `endTime` から実日時の範囲 `(startDateTime, endDateTime)` を算出する
+  (DateTime, DateTime)? get resolvedTimeRange {
+    final baseDate = recordedDate;
+    if (baseDate == null) return null;
+
+    final startParts = _parseHourMinute(startTime);
+    final endParts = _parseHourMinute(endTime);
+
+    final startDt = DateTime(
+      baseDate.year,
+      baseDate.month,
+      baseDate.day,
+      startParts.$1,
+      startParts.$2,
+    );
+
+    var endDt = DateTime(
+      baseDate.year,
+      baseDate.month,
+      baseDate.day,
+      endParts.$1,
+      endParts.$2,
+    );
+    // 終了時刻が開始時刻より前の場合（宿泊など日跨ぎ）は翌日扱いにする
+    if (endDt.isBefore(startDt)) {
+      endDt = endDt.add(const Duration(days: 1));
+    }
+    return (startDt, endDt);
+  }
+
+  static (int, int) _parseHourMinute(String text) {
+    final parts = text.split(':');
+    if (parts.length >= 2) {
+      final h = int.tryParse(parts[0].trim()) ?? 0;
+      final m = int.tryParse(parts[1].trim()) ?? 0;
+      return (h.clamp(0, 23), m.clamp(0, 59));
+    }
+    return (12, 0);
+  }
+
+  static final List<MemoryPin> initialSamplePins = [
     MemoryPin(
       id: 'pin_tokyo_cafe',
       teamId: 'daily',
@@ -218,12 +301,13 @@ class MemoryPin {
       prefecture: '東京都',
       latitude: 35.6821,
       longitude: 139.7988,
-      mapNormalizedPosition: Offset(0.66, 0.56),
+      mapNormalizedPosition: const Offset(0.66, 0.56),
       startTime: '10:30',
       endTime: '12:00',
       rating: 5,
       comment: '浅煎りのハンドドリップが絶品。静かな朝の時間を楽しめた。',
-      photoLabels: ['ラテアート', '外観', 'テラス席'],
+      photoLabels: const ['ラテアート', '外観', 'テラス席'],
+      recordedDate: DateTime(2026, 10, 18),
       tripId: 'trip_kanto_day',
     ),
     MemoryPin(
@@ -234,12 +318,12 @@ class MemoryPin {
       prefecture: '千葉県',
       latitude: 35.4646,
       longitude: 139.8744,
-      mapNormalizedPosition: Offset(0.69, 0.61),
+      mapNormalizedPosition: const Offset(0.69, 0.61),
       startTime: '13:00',
       endTime: '13:20',
-      rating: 0,
       comment: '東京湾を一望できるパーキングエリアで小休憩。',
-      photoLabels: [],
+      photoLabels: const [],
+      recordedDate: DateTime(2026, 10, 18),
       isRouteWaypointOnly: true,
       tripId: 'trip_kanto_day',
     ),
@@ -251,12 +335,13 @@ class MemoryPin {
       prefecture: '神奈川県',
       latitude: 35.3056,
       longitude: 139.5105,
-      mapNormalizedPosition: Offset(0.62, 0.63),
+      mapNormalizedPosition: const Offset(0.62, 0.63),
       startTime: '14:30',
       endTime: '16:30',
       rating: 4,
       comment: '夕暮れの江ノ島と富士山がきれいに見えた思い出の場所。',
-      photoLabels: ['夕焼けの海', 'パンケーキ'],
+      photoLabels: const ['夕焼けの海', 'パンケーキ'],
+      recordedDate: DateTime(2026, 10, 18),
       tripId: 'trip_kanto_day',
     ),
     MemoryPin(
@@ -267,12 +352,13 @@ class MemoryPin {
       prefecture: '京都府',
       latitude: 35.0170,
       longitude: 135.6713,
-      mapNormalizedPosition: Offset(0.45, 0.62),
+      mapNormalizedPosition: const Offset(0.45, 0.62),
       startTime: '09:00',
       endTime: '11:00',
       rating: 5,
       comment: '早朝に訪問したため人が少なく、風が吹く音まで心地よかった。',
-      photoLabels: ['竹林', '渡月橋'],
+      photoLabels: const ['竹林', '渡月橋'],
+      recordedDate: DateTime(2026, 10, 25),
       tripId: 'trip_kyoto_autumn',
     ),
     MemoryPin(
@@ -283,12 +369,13 @@ class MemoryPin {
       prefecture: '北海道',
       latitude: 43.0626,
       longitude: 141.3535,
-      mapNormalizedPosition: Offset(0.80, 0.22),
+      mapNormalizedPosition: const Offset(0.80, 0.22),
       startTime: '18:00',
       endTime: '20:00',
       rating: 4,
       comment: '夜風が涼しく、スープカレーとシメパフェを満喫。',
-      photoLabels: ['時計台夜景', 'スープカレー'],
+      photoLabels: const ['時計台夜景', 'スープカレー'],
+      recordedDate: DateTime(2026, 11, 1),
       tripId: 'trip_hokkaido_gourmet',
     ),
     MemoryPin(
@@ -299,12 +386,13 @@ class MemoryPin {
       prefecture: '神奈川県',
       latitude: 35.2324,
       longitude: 139.1069,
-      mapNormalizedPosition: Offset(0.60, 0.64),
+      mapNormalizedPosition: const Offset(0.60, 0.64),
       startTime: '15:00',
       endTime: '10:00',
       rating: 5,
       comment: 'チームみんなで露天風呂と懐石料理を満喫！',
-      photoLabels: ['露天風呂', '夕食', '集合写真'],
+      photoLabels: const ['露天風呂', '夕食', '集合写真'],
+      recordedDate: DateTime(2026, 11, 2),
       tripId: 'trip_hakone_onsen',
     ),
     MemoryPin(
@@ -315,12 +403,13 @@ class MemoryPin {
       prefecture: '東京都',
       latitude: 35.6488,
       longitude: 139.6994,
-      mapNormalizedPosition: Offset(0.65, 0.57),
+      mapNormalizedPosition: const Offset(0.65, 0.57),
       startTime: '14:00',
       endTime: '16:00',
       rating: 4,
       comment: '読書しながら過ごせる落ち着いた空間。チーズケーキが濃厚。',
-      photoLabels: ['チーズケーキ', '本棚'],
+      photoLabels: const ['チーズケーキ', '本棚'],
+      recordedDate: DateTime(2026, 11, 5),
       tripId: 'trip_daikanyama_cafe',
     ),
   ];

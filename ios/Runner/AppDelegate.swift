@@ -24,6 +24,17 @@ import UIKit
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
     )
     channel.setMethodCallHandler { call, result in
+      if call.method == "getGoogleMapsApiKey" {
+        if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String,
+           !apiKey.isEmpty,
+           !apiKey.hasPrefix("$(") {
+          result(apiKey)
+        } else {
+          result("")
+        }
+        return
+      }
+
       guard call.method == "openGoogleMaps",
             let args = call.arguments as? [String: Any] else {
         result(FlutterMethodNotImplemented)

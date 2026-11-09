@@ -36,22 +36,21 @@ class ExternalMapLauncher {
 
     try {
       // Android / iOS ネイティブの MethodChannel 経由で Google Maps アプリを起動
-      final bool? launched = await _channel.invokeMethod<bool>(
-        'openGoogleMaps',
-        <String, dynamic>{
-          'query': query,
-          'encodedQuery': encodedQuery,
-          'universalUrl': universalUrl,
-          'latitude': latitude,
-          'longitude': longitude,
-        },
-      );
+      final bool? launched = await _channel
+          .invokeMethod<bool>('openGoogleMaps', <String, dynamic>{
+            'query': query,
+            'encodedQuery': encodedQuery,
+            'universalUrl': universalUrl,
+            'latitude': latitude,
+            'longitude': longitude,
+          });
       if (launched == true) {
         return true;
       }
     } on MissingPluginException {
       // デスクトップ環境やウィジェットテスト環境でのフォールバック
-      if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      if (!kIsWeb &&
+          (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
         try {
           if (Platform.isWindows) {
             await Process.run('cmd', ['/c', 'start', '', universalUrl]);
@@ -80,4 +79,3 @@ class ExternalMapLauncher {
     return false;
   }
 }
-

@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../../core/models/memory_pin.dart';
+import '../../../core/services/external_map_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// ピン吹き出しの「詳細→」から表示されるボトムシート
 class PinDetailSheet extends StatelessWidget {
-  const PinDetailSheet({super.key, required this.pin});
+  const PinDetailSheet({super.key, required this.pin, this.onDeletePin});
 
   final MemoryPin pin;
+  final ValueChanged<MemoryPin>? onDeletePin;
 
-  static Future<void> show(BuildContext context, MemoryPin pin) {
+  static Future<void> show(
+    BuildContext context,
+    MemoryPin pin, {
+    ValueChanged<MemoryPin>? onDeletePin,
+  }) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -16,8 +22,39 @@ class PinDetailSheet extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (_) => PinDetailSheet(pin: pin),
+      builder: (_) => PinDetailSheet(pin: pin, onDeletePin: onDeletePin),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('レビューを削除'),
+          content: Text('「${pin.placeName}」のレビュー・ピンを削除してもよろしいですか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: AppTheme.pureWhite,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('削除する'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      Navigator.of(context).pop();
+      onDeletePin?.call(pin);
+    }
   }
 
   @override
@@ -80,32 +117,79 @@ class PinDetailSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              pin.placeName,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.darkGrey,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              pin.address,
-              style: const TextStyle(fontSize: 13, color: AppTheme.primaryGrey),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    pin.placeName,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.darkGrey,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (onDeletePin != null) ...[
+                  InkWell(
+                    key: const Key('delete_pin_button'),
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _confirmDelete(context),
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Tooltip(
+                        message: 'このレビューを削除',
+                        child: Icon(
+                          Icons.delete_outline,
+                          size: 20,
+                          color: AppTheme.darkGrey,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    ExternalMapLauncher.openGoogleMapsForAddress(
+                      context,
+                      address: pin.address,
+                      placeName: pin.placeName,
+                      latitude: pin.latitude,
+                      longitude: pin.longitude,
+                    );
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Tooltip(
+                      message: 'Google Mapsで開く',
+                      child: Icon(
+                        Icons.north_east,
+                        size: 20,
+                        color: AppTheme.darkGrey,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             Row(
               children: [
-                ...List.generate(5, (index) {
-                  return Icon(
-                    index < pin.rating
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    size: 22,
-                    color: AppTheme.darkGrey,
-                  );
-                }),
-                const SizedBox(width: 12),
+                if (pin.rating != null && pin.rating! > 0) ...[
+                  ...List.generate(5, (index) {
+                    return Icon(
+                      index < pin.rating!
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      size: 22,
+                      color: AppTheme.darkGrey,
+                    );
+                  }),
+                  const SizedBox(width: 12),
+                ],
                 const Icon(
                   Icons.access_time,
                   size: 16,

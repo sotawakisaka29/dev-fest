@@ -294,11 +294,15 @@ class AuthService {
   Future<void> signOut() async {
     _localFallbackUser = null;
     _isGuestSessionActive = true;
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {}
-    if (_auth != null) {
-      await _auth!.signOut();
+    if (isFirebaseInitialized) {
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+      if (_auth != null) {
+        try {
+          await _auth!.signOut();
+        } catch (_) {}
+      }
     }
     _localAuthStateController.add(AppUser.demoUser);
   }
